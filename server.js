@@ -4,9 +4,13 @@ const { Server } = require('socket.io');
 const path = require('path');
 const crypto = require('crypto');
 
+const BASE_PATH = (process.env.BASE_PATH || '').replace(/\/+$/, '');
+
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+  path: BASE_PATH ? `${BASE_PATH}/socket.io/` : '/socket.io/',
+});
 
 // ── Logging ──
 
@@ -21,11 +25,13 @@ function log(tag, msg, data) {
   console.log(line);
 }
 
-app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
+// Serve static files and routes under BASE_PATH
+app.use(BASE_PATH || '/', express.static(path.join(__dirname, 'public')));
+
 // Client error reporting endpoint
-app.post('/client-log', (req, res) => {
+app.post(`${BASE_PATH}/client-log`, (req, res) => {
   const { level, message, data, playerIdx, roomId, userAgent } = req.body || {};
   const tag = `CLIENT:P${playerIdx ?? '?'}:${roomId ?? '?'}`;
   if (level === 'error') {
@@ -198,10 +204,10 @@ function processShot(game, attackerIdx, r, c, weapon) {
 }
 
 // Routes
-app.get('/join', (req, res) => {
+app.get(`${BASE_PATH}/join`, (req, res) => {
   const roomId = crypto.randomBytes(4).toString('hex');
   log('ROUTE', `New room created via /join`, { roomId });
-  res.redirect(`/?room=${roomId}`);
+  res.redirect(`${BASE_PATH}/?room=${roomId}`);
 });
 
 // Socket.io
@@ -489,6 +495,6 @@ setInterval(() => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  log('SERVER', `Battleship server running on http://localhost:${PORT}`);
-  log('SERVER', `Share link: http://localhost:${PORT}/join`);
+  log('SERVER', `Battleship server running on http://localhost:${PORT}${BASE_PATH}/`);
+  log('SERVER', `Share link: http://localhost:${PORT}${BASE_PATH}/join`);
 });

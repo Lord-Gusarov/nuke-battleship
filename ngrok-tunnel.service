@@ -1,0 +1,15 @@
+[Unit]
+Description=ngrok tunnel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gustavo
+ExecStart=/usr/local/bin/ngrok http --url=norene-nonreasonable-acceleratedly.ngrok-free.dev 3000
+Restart=on-failure
+RestartSec=10
+Environment=HOME=/home/gustavo
+
+[Install]
+WantedBy=multi-user.target

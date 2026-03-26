@@ -1,0 +1,17 @@
+[Unit]
+Description=Naval Command — Battleship Game
+After=network.target
+
+[Service]
+Type=simple
+User=gustavo
+WorkingDirectory=/home/gustavo/nuke-battleship
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=BASE_PATH=/naval-command
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

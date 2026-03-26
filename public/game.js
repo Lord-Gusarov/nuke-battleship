@@ -1,5 +1,7 @@
 (() => {
-  const socket = io();
+  // Derive base path from current URL so the app works behind any prefix
+  const basePath = location.pathname.replace(/\/+$/, '');
+  const socket = io({ path: `${basePath}/socket.io/` });
 
   // ── Client logging — sends to server /client-log endpoint ──
 
@@ -23,7 +25,7 @@
     }
     // Fire-and-forget POST to server
     try {
-      fetch('/client-log', {
+      fetch(`${basePath}/client-log`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -726,9 +728,9 @@
     _logRoomId = roomId;
     clientLog('info', 'Joined room', { playerIdx, roomId });
 
-    window.history.replaceState({}, '', `?room=${roomId}`);
+    window.history.replaceState({}, '', `${basePath}/?room=${roomId}`);
 
-    const shareUrl = `${location.origin}?room=${roomId}`;
+    const shareUrl = `${location.origin}${basePath}/?room=${roomId}`;
     $roomInfo.innerHTML = `Room: <strong>${roomId}</strong> &mdash; <a href="${shareUrl}" onclick="navigator.clipboard.writeText('${shareUrl}');return false;">Copy invite link</a>`;
 
     setStatus(`Player ${playerIdx + 1} — waiting for opponent...`);
