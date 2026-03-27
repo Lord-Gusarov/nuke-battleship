@@ -87,6 +87,75 @@ body::after {
 }
 
 /* ═══════════════════════════════════════════
+   1b. MENU
+   ═══════════════════════════════════════════ */
+
+#menu-btn {
+  position: fixed;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 1000;
+  background: rgba(4, 14, 26, 0.85);
+  border: 1px solid var(--radar-green-dim);
+  color: var(--radar-green);
+  font-family: var(--font-mono);
+  font-size: 1.4rem;
+  width: 2.4rem;
+  height: 2.4rem;
+  cursor: pointer;
+  line-height: 1;
+  border-radius: 2px;
+}
+
+#menu-btn:hover, #menu-btn:active {
+  border-color: var(--radar-green);
+  text-shadow: 0 0 10px var(--radar-green-glow);
+}
+
+#menu-dropdown {
+  display: none;
+  position: fixed;
+  top: 3.5rem;
+  right: 0.75rem;
+  z-index: 1000;
+  background: rgba(4, 14, 26, 0.95);
+  border: 1px solid var(--radar-green-dim);
+  min-width: 10rem;
+  flex-direction: column;
+}
+
+#menu-dropdown.open {
+  display: flex;
+}
+
+.menu-item {
+  background: none;
+  border: none;
+  border-bottom: 1px solid rgba(57, 255, 133, 0.1);
+  color: var(--text-green);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  padding: 0.7rem 1rem;
+  cursor: pointer;
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.menu-item:last-child {
+  border-bottom: none;
+}
+
+.menu-item:hover, .menu-item:active {
+  background: rgba(57, 255, 133, 0.08);
+  text-shadow: 0 0 10px var(--radar-green-glow);
+}
+
+.menu-item.muted {
+  color: var(--text-dim);
+}
+
+/* ═══════════════════════════════════════════
    2. TYPOGRAPHY
    ═══════════════════════════════════════════ */
 
@@ -105,12 +174,26 @@ h1 {
   vertical-align: middle;
 }
 
+#status-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  min-height: 1.5em;
+}
+
 #status {
   font-size: 0.85rem;
-  margin-bottom: 1rem;
   color: var(--text-dim);
-  min-height: 1.5em;
   letter-spacing: 2px;
+}
+
+#turn-timer {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  letter-spacing: 2px;
+  opacity: 0.6;
 }
 
 #status.active-turn {
@@ -118,6 +201,16 @@ h1 {
   font-weight: 400;
   text-shadow: 0 0 10px var(--radar-green-glow);
   animation: statusPulse 2s ease-in-out infinite;
+}
+
+#status.reconnecting {
+  color: var(--radar-amber);
+  animation: pulseReconnect 1.5s ease-in-out infinite;
+}
+
+@keyframes pulseReconnect {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
 }
 
 @keyframes statusPulse {
@@ -156,6 +249,22 @@ h1 {
 
 .screen.active {
   display: flex;
+  animation: fadeIn 0.3s ease forwards;
+}
+
+.screen.fading-out {
+  display: flex;
+  animation: fadeOut 0.3s ease forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 
 /* ═══════════════════════════════════════════
@@ -163,8 +272,161 @@ h1 {
    ═══════════════════════════════════════════ */
 
 #lobby {
-  margin-top: 3rem;
+  margin-top: 1.5rem;
   gap: 1rem;
+}
+
+/* ── Fleet silhouette scene ── */
+
+.fleet-scene {
+  position: relative;
+  width: 340px;
+  max-width: 90vw;
+  height: 180px;
+  overflow: hidden;
+  border: 1px solid rgba(57, 255, 133, 0.12);
+  border-radius: 2px;
+  background:
+    radial-gradient(ellipse at 50% 80%, rgba(57, 255, 133, 0.04) 0%, transparent 70%),
+    linear-gradient(180deg, var(--ocean-deep) 0%, var(--ocean-mid) 100%);
+}
+
+.fleet-radar {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.fleet-radar-sweep {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 200%;
+  height: 200%;
+  transform-origin: 0 0;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    rgba(57, 255, 133, 0.08) 15deg,
+    transparent 40deg
+  );
+  animation: radarSpin 4s linear infinite;
+}
+
+@keyframes radarSpin {
+  to { transform: rotate(360deg); }
+}
+
+.fleet-radar-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 120px;
+  height: 120px;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(57, 255, 133, 0.06);
+  border-radius: 50%;
+}
+
+.fleet-radar-ring.r2 {
+  width: 200px;
+  height: 200px;
+}
+
+.fleet-radar-ring.r3 {
+  width: 300px;
+  height: 300px;
+}
+
+.fleet-crosshair {
+  position: absolute;
+  background: rgba(57, 255, 133, 0.05);
+}
+
+.fleet-crosshair.h {
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+
+.fleet-crosshair.v {
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+
+.fleet-horizon {
+  position: absolute;
+  bottom: 55px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(57, 255, 133, 0.15) 20%,
+    rgba(57, 255, 133, 0.25) 50%,
+    rgba(57, 255, 133, 0.15) 80%,
+    transparent 100%
+  );
+}
+
+.fleet-ships {
+  position: absolute;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 340px;
+  height: auto;
+}
+
+.ship-silhouette {
+  fill: var(--radar-green);
+  stroke: var(--radar-green);
+  filter: drop-shadow(0 0 4px rgba(57, 255, 133, 0.3));
+}
+
+.ship-silhouette.s1 {
+  animation: shipBob 6s ease-in-out infinite;
+}
+
+.ship-silhouette.s2 {
+  animation: shipBob 5s ease-in-out 1s infinite;
+}
+
+.ship-silhouette.s3 {
+  animation: shipBob 7s ease-in-out 0.5s infinite;
+}
+
+.ship-silhouette.s4 {
+  animation: shipBob 4.5s ease-in-out 2s infinite;
+}
+
+@keyframes shipBob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+
+.fleet-waterline {
+  stroke: rgba(57, 255, 133, 0.1);
+  stroke-width: 1;
+  stroke-dasharray: 4 6;
+}
+
+.fleet-scan-text {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: 0.55rem;
+  color: var(--text-dim);
+  letter-spacing: 3px;
+  opacity: 0.6;
+  white-space: nowrap;
 }
 
 .terminal-box {
@@ -553,6 +815,18 @@ h1 {
   box-shadow: 0 0 10px var(--radar-green-glow);
 }
 
+.cell.ship-preview-locked {
+  background: rgba(57, 255, 133, 0.25);
+  border-color: rgba(57, 255, 133, 0.5);
+  box-shadow: 0 0 12px var(--radar-green-glow);
+  animation: previewPulse 1s ease-in-out infinite;
+}
+
+@keyframes previewPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 .cell.ship-preview-invalid {
   background: rgba(255, 58, 58, 0.15);
   border-color: rgba(255, 58, 58, 0.3);
@@ -610,6 +884,54 @@ h1 {
 @keyframes cellMissRadar {
   0%   { background: rgba(57, 255, 133, 0.2); }
   100% { background: rgba(57, 255, 133, 0.05); }
+}
+
+/* Missile fly animation */
+.missile-fly {
+  position: fixed;
+  z-index: 500;
+  width: 6px;
+  height: 20px;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  animation: missileDescend 1.5s ease-in forwards;
+}
+
+.missile-fly::before {
+  content: '';
+  position: absolute;
+  width: 6px;
+  height: 20px;
+  background: linear-gradient(180deg, transparent 0%, var(--radar-green) 30%, #fff 100%);
+  border-radius: 3px 3px 1px 1px;
+  box-shadow: 0 0 8px var(--radar-green), 0 0 20px var(--radar-green-glow);
+}
+
+/* Exhaust trail */
+.missile-fly::after {
+  content: '';
+  position: absolute;
+  top: -30px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 30px;
+  background: linear-gradient(180deg, transparent, rgba(57, 255, 133, 0.4));
+  border-radius: 1px;
+}
+
+@keyframes missileDescend {
+  0% {
+    top: -40px;
+    opacity: 0.3;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    top: var(--target-y);
+    opacity: 1;
+  }
 }
 
 /* Sonar ripple on miss */
@@ -814,6 +1136,42 @@ h1 {
 /* ═══════════════════════════════════════════
    9. SHIP STATUS BAR
    ═══════════════════════════════════════════ */
+
+#reaction-bar {
+  display: flex;
+  gap: 0.4rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin: 0.3rem 0;
+}
+
+.reaction-btn {
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--radar-green-dim);
+  background: rgba(57, 255, 133, 0.05);
+  color: var(--radar-green);
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  cursor: pointer;
+  border-radius: 2px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.reaction-btn:hover {
+  background: rgba(57, 255, 133, 0.15);
+  border-color: var(--radar-green);
+}
+
+.reaction-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.toast-item.reaction-toast {
+  background: rgba(57, 255, 133, 0.12);
+  border-color: var(--radar-green);
+}
 
 #ship-status {
   display: flex;
@@ -1179,6 +1537,47 @@ h1 {
 }
 
 /* ═══════════════════════════════════════════
+   16a. DISCONNECT OVERLAY
+   ═══════════════════════════════════════════ */
+
+#disconnect-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.9);
+  z-index: 200;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 1rem;
+  font-family: var(--font-mono);
+}
+
+#disconnect-overlay.active {
+  display: flex;
+}
+
+#disconnect-overlay h2 {
+  font-size: 2rem;
+  color: var(--radar-amber);
+  font-weight: 400;
+  letter-spacing: 6px;
+  text-shadow: 0 0 25px rgba(255, 184, 54, 0.4);
+}
+
+#disconnect-overlay p {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  letter-spacing: 2px;
+}
+
+.disconnect-controls {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+
+/* ═══════════════════════════════════════════
    16. RESPONSIVE
    ═══════════════════════════════════════════ */
 
@@ -1231,6 +1630,16 @@ h1 {
   h1 {
     font-size: 1.2rem;
     letter-spacing: 3px;
+  }
+
+  .fleet-scene {
+    height: 140px;
+    width: 100%;
+  }
+
+  .fleet-scan-text {
+    font-size: 0.5rem;
+    letter-spacing: 2px;
   }
 
   .cell {

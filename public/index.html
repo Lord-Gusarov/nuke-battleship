@@ -11,16 +11,163 @@
   <!-- CRT scanline overlay -->
   <div id="crt-overlay"></div>
 
+  <!-- Menu button -->
+  <button id="menu-btn" aria-label="Menu">&#9776;</button>
+  <div id="menu-dropdown">
+    <button id="menu-mute" class="menu-item">&#9834; MUTE SOUNDS</button>
+    <button id="menu-new-game" class="menu-item">&#9654; NEW GAME</button>
+    <button id="menu-quit" class="menu-item">&#9747; QUIT</button>
+  </div>
+
   <h1>
     <span class="title-icon">&#9178;</span>
     NAVAL COMMAND
     <span class="title-icon">&#9178;</span>
   </h1>
-  <div id="status">AWAITING CONNECTION...</div>
+  <div id="status-row"><span id="status">AWAITING CONNECTION...</span><span id="turn-timer"></span></div>
   <div id="room-info"></div>
 
   <!-- Lobby screen -->
   <div id="lobby" class="screen active">
+
+    <!-- Fleet silhouette scene -->
+    <div class="fleet-scene">
+      <div class="fleet-radar">
+        <div class="fleet-radar-sweep"></div>
+        <div class="fleet-radar-ring"></div>
+        <div class="fleet-radar-ring r2"></div>
+        <div class="fleet-radar-ring r3"></div>
+        <div class="fleet-crosshair h"></div>
+        <div class="fleet-crosshair v"></div>
+      </div>
+      <div class="fleet-horizon"></div>
+      <svg class="fleet-ships" viewBox="0 0 400 90" xmlns="http://www.w3.org/2000/svg">
+        <!-- Aircraft Carrier — Forrestal/Kitty Hawk class -->
+        <g class="ship-silhouette s1" opacity="0.5">
+          <!-- Hull -->
+          <path d="M8,63 L14,58 L18,56 L90,56 L96,58 L98,63 Z"/>
+          <!-- Flight deck (overhangs hull, flat top) -->
+          <path d="M12,56 L16,53 L92,53 L95,56 Z"/>
+          <!-- Angled flight deck edge -->
+          <line x1="30" y1="53" x2="60" y2="56" stroke-width="0.5" opacity="0.3"/>
+          <!-- Island superstructure (offset starboard) -->
+          <rect x="62" y="46" width="10" height="7" rx="1"/>
+          <!-- Island bridge windows -->
+          <rect x="63" y="47" width="8" height="2" rx="0.5" opacity="0.4"/>
+          <!-- Radar mast on island -->
+          <line x1="67" y1="46" x2="67" y2="39" stroke-width="1.2"/>
+          <!-- SPS-43 air search radar -->
+          <rect x="64" y="38" width="6" height="1.5" rx="0.5"/>
+          <!-- Whip antennas -->
+          <line x1="70" y1="46" x2="71" y2="41" stroke-width="0.6"/>
+          <line x1="64" y1="46" x2="63" y2="42" stroke-width="0.6"/>
+          <!-- Elevator outlines -->
+          <rect x="38" y="53.5" width="7" height="2" opacity="0.2"/>
+          <rect x="78" y="53.5" width="7" height="2" opacity="0.2"/>
+        </g>
+
+        <!-- Destroyer — Adams/Spruance class -->
+        <g class="ship-silhouette s2" opacity="0.6">
+          <!-- Hull — sharp bow, low stern -->
+          <path d="M120,67 L124,62 L128,59 L172,59 L176,62 L176,67 Z"/>
+          <!-- Forward gun turret (5-inch/54) -->
+          <path d="M132,59 L132,56.5 L138,56.5 L138,59"/>
+          <rect x="131" y="55.5" width="8" height="1.5" rx="0.8"/>
+          <!-- Gun barrel -->
+          <line x1="128" y1="56" x2="131" y2="56.5" stroke-width="0.8"/>
+          <!-- Bridge superstructure -->
+          <path d="M142,59 L142,54 L152,54 L152,59"/>
+          <rect x="143" y="55" width="8" height="2" rx="0.5" opacity="0.4"/>
+          <!-- Mack (combined mast/stack) -->
+          <line x1="147" y1="54" x2="147" y2="47" stroke-width="1.5"/>
+          <!-- SPS-40 radar -->
+          <path d="M144,47 L150,47 L149,46 L145,46 Z"/>
+          <!-- Funnel -->
+          <path d="M155,59 L156,53 L160,53 L161,59" opacity="0.8"/>
+          <!-- Aft superstructure -->
+          <rect x="163" y="56" width="8" height="3" rx="0.5"/>
+          <!-- Aft mast -->
+          <line x1="167" y1="56" x2="167" y2="51" stroke-width="0.8"/>
+          <rect x="165" y="50.5" width="4" height="1" rx="0.3"/>
+        </g>
+
+        <!-- Battleship — Iowa class (center, prominent) -->
+        <g class="ship-silhouette s3" opacity="0.8">
+          <!-- Hull — heavy beam, long profile -->
+          <path d="M185,66 L192,60 L198,56 L300,56 L307,60 L308,66 Z"/>
+          <!-- Forecastle deck rise -->
+          <path d="M198,56 L200,54 L240,54 L240,56" opacity="0.6"/>
+          <!-- Turret #1 (forward, superfiring lower) -->
+          <path d="M206,56 L206,52 L216,52 L216,56"/>
+          <rect x="205" y="51" width="12" height="2" rx="1"/>
+          <!-- Triple gun barrels turret 1 -->
+          <line x1="200" y1="51.5" x2="205" y2="52" stroke-width="0.7"/>
+          <line x1="199" y1="52.5" x2="205" y2="52.5" stroke-width="0.7"/>
+          <line x1="200" y1="53.5" x2="205" y2="53" stroke-width="0.7"/>
+          <!-- Turret #2 (forward, superfiring upper) -->
+          <path d="M218,54 L218,49 L228,49 L228,54"/>
+          <rect x="217" y="48" width="12" height="2" rx="1"/>
+          <!-- Triple gun barrels turret 2 -->
+          <line x1="212" y1="48.5" x2="217" y2="49" stroke-width="0.7"/>
+          <line x1="211" y1="49.5" x2="217" y2="49.5" stroke-width="0.7"/>
+          <line x1="212" y1="50.5" x2="217" y2="50" stroke-width="0.7"/>
+          <!-- Bridge tower / conning tower -->
+          <path d="M236,56 L236,44 L248,44 L248,56"/>
+          <rect x="237" y="45" width="10" height="3" rx="0.5" opacity="0.4"/>
+          <!-- Main mast (lattice/tripod) -->
+          <line x1="242" y1="44" x2="242" y2="34" stroke-width="1.5"/>
+          <line x1="239" y1="44" x2="242" y2="37" stroke-width="0.6"/>
+          <line x1="245" y1="44" x2="242" y2="37" stroke-width="0.6"/>
+          <!-- Main radar (SPS-49) -->
+          <rect x="239" y="33" width="6" height="2" rx="0.5"/>
+          <!-- Fire control director -->
+          <rect x="240" y="36" width="4" height="2" rx="1"/>
+          <!-- Funnel #1 -->
+          <path d="M252,56 L253,48 L258,48 L259,56" opacity="0.8"/>
+          <!-- Funnel #2 -->
+          <path d="M262,56 L263,49 L268,49 L269,56" opacity="0.7"/>
+          <!-- Aft mast -->
+          <line x1="274" y1="56" x2="274" y2="44" stroke-width="1.2"/>
+          <line x1="271" y1="52" x2="274" y2="46" stroke-width="0.5"/>
+          <line x1="277" y1="52" x2="274" y2="46" stroke-width="0.5"/>
+          <rect x="272" y="43" width="4" height="1.5" rx="0.3"/>
+          <!-- Turret #3 (aft) -->
+          <path d="M282,56 L282,51 L292,51 L292,56"/>
+          <rect x="281" y="50" width="12" height="2" rx="1"/>
+          <!-- Triple gun barrels turret 3 (pointing aft) -->
+          <line x1="293" y1="50.5" x2="298" y2="50" stroke-width="0.7"/>
+          <line x1="293" y1="51.5" x2="299" y2="51.5" stroke-width="0.7"/>
+          <line x1="293" y1="52.5" x2="298" y2="53" stroke-width="0.7"/>
+        </g>
+
+        <!-- Submarine — Los Angeles class SSN -->
+        <g class="ship-silhouette s4" opacity="0.45">
+          <!-- Hull — teardrop, mostly submerged -->
+          <path d="M318,70 C318,70 322,64 330,64 L370,64 C378,64 382,70 382,70 Z"/>
+          <!-- Hull above waterline (very low freeboard) -->
+          <path d="M325,64 C328,62 332,61 340,61 L360,61 C368,61 372,62 375,64 Z" opacity="0.7"/>
+          <!-- Sail (conning tower) -->
+          <path d="M346,61 L346,53 L356,53 L356,61"/>
+          <rect x="347" y="54" width="8" height="3" rx="0.5" opacity="0.3"/>
+          <!-- Sail diving planes -->
+          <line x1="343" y1="57" x2="346" y2="57" stroke-width="1"/>
+          <line x1="356" y1="57" x2="359" y2="57" stroke-width="1"/>
+          <!-- Periscope masts -->
+          <line x1="349" y1="53" x2="349" y2="48" stroke-width="0.8"/>
+          <line x1="352" y1="53" x2="352" y2="49" stroke-width="0.6"/>
+          <!-- ESM mast -->
+          <line x1="354" y1="53" x2="354" y2="50" stroke-width="0.6"/>
+          <rect x="353" y="49.5" width="2" height="1" rx="0.3"/>
+          <!-- Bow sonar dome hint -->
+          <ellipse cx="327" cy="66" rx="4" ry="2" opacity="0.3"/>
+        </g>
+
+        <!-- Waterline reflection -->
+        <line class="fleet-waterline" x1="10" y1="72" x2="390" y2="72"/>
+      </svg>
+      <div class="fleet-scan-text">FLEET STATUS: COMBAT READY</div>
+    </div>
+
     <div class="terminal-box">
       <div class="terminal-label">ENTER TACTICAL CHANNEL</div>
       <input type="text" id="room-input" placeholder="ROOM CODE" spellcheck="false">
@@ -39,6 +186,8 @@
     <div id="placement-controls">
       <span class="ship-label" id="current-ship-label">DEPLOY: CARRIER (5)</span>
       <button id="rotate-btn" class="cmd-btn">ROTATE (R)</button>
+      <button id="undo-btn" class="cmd-btn" style="display:none;">UNDO (Z)</button>
+      <button id="random-btn" class="cmd-btn">RANDOM (Q)</button>
       <button id="confirm-placement" class="cmd-btn primary" style="display:none;">CONFIRM DEPLOYMENT</button>
     </div>
     <div class="grid-wrapper">
@@ -66,6 +215,13 @@
         <span class="weapon-label">NUCLEAR<br>STRIKE</span>
         <span class="count" id="nuke-count">2</span>
       </button>
+    </div>
+    <div id="reaction-bar">
+      <button class="reaction-btn" data-reaction="0">Nice shot!</button>
+      <button class="reaction-btn" data-reaction="1">Missed me!</button>
+      <button class="reaction-btn" data-reaction="2">Good game</button>
+      <button class="reaction-btn" data-reaction="3">&#128293;</button>
+      <button class="reaction-btn" data-reaction="4">&#128561;</button>
     </div>
     <div id="ship-status"></div>
     <div id="game-area">
@@ -118,6 +274,15 @@
       <button class="cmd-btn" onclick="location.reload()">LEAVE</button>
     </div>
     <p id="rematch-status"></p>
+  </div>
+
+  <!-- Opponent disconnected overlay -->
+  <div id="disconnect-overlay">
+    <h2>SIGNAL LOST</h2>
+    <p>Opponent has left the battlefield</p>
+    <div class="disconnect-controls">
+      <button class="cmd-btn primary" id="disconnect-new-game">NEW GAME</button>
+    </div>
   </div>
 
   <script src="https://cdn.socket.io/4.8.3/socket.io.min.js"></script>

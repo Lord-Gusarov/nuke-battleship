@@ -49,6 +49,16 @@
     });
   });
 
+  // ── Mute ──
+
+  let muted = localStorage.getItem('naval-command-muted') === 'true';
+
+  function updateMuteUI() {
+    const btn = document.getElementById('menu-mute');
+    btn.textContent = muted ? '\u266B UNMUTE SOUNDS' : '\u266B MUTE SOUNDS';
+    btn.classList.toggle('muted', muted);
+  }
+
   // ── Audio engine (Web Audio API — no files needed) ──
   // All audio is wrapped in try/catch for iOS Safari compatibility.
   // iOS requires a user gesture before AudioContext works, so we
@@ -58,6 +68,7 @@
   let audioCtx = null;
 
   function getAudioCtx() {
+    if (muted) return null;
     if (!audioCtx) {
       try {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -79,14 +90,36 @@
 
   socket.on('disconnect', (reason) => {
     clientLog('error', 'Socket disconnected', { reason });
+    // Deliberate disconnects don't need reconnecting UI
+    if (reason === 'io server disconnect' || reason === 'io client disconnect') return;
+    setStatus('RECONNECTING...');
+    $status.classList.add('reconnecting');
   });
 
-  socket.on('reconnect', (attemptNumber) => {
+  socket.io.on('reconnect', (attemptNumber) => {
     clientLog('info', 'Socket reconnected', { attemptNumber });
+    $status.classList.remove('reconnecting');
+    toast('Connection restored!');
+    if (roomId) socket.emit('join_room', roomId);
+  });
+
+  socket.io.on('reconnect_attempt', (attempt) => {
+    clientLog('info', 'Reconnection attempt', { attempt });
+    setStatus(`RECONNECTING... (attempt ${attempt})`);
+  });
+
+  socket.io.on('reconnect_failed', () => {
+    clientLog('error', 'Reconnection failed');
+    $status.classList.remove('reconnecting');
+    const overlay = document.getElementById('disconnect-overlay');
+    overlay.querySelector('h2').textContent = 'CONNECTION LOST';
+    overlay.querySelector('p').textContent = 'Unable to reconnect to server';
+    overlay.classList.add('active');
   });
 
   socket.on('connect_error', (err) => {
     clientLog('error', 'Socket connect error', { message: err.message });
+    setStatus('CONNECTION ERROR — retrying...');
   });
 
   // Unlock audio on first tap/click (required by iOS Safari)
@@ -526,9 +559,9 @@
 
         overlay.classList.add('active');
 
-        playSirenSound(3);
+        playSirenSound(2);
 
-        let count = 3;
+        let count = 2;
         number.textContent = count;
         playDoomCountdown();
 
@@ -593,6 +626,8 @@
   let currentShipIdx = 0;
   let orientation = 'h';
   let placementGrid = [];
+  let pendingPreview = null;  // { r, c, orient } — locked preview for touch placement
+  let lastInputWasTouch = false;
 
   // Battle state
   let selectedWeapon = 'missile';
@@ -603,6 +638,10 @@
   let sunkEnemyShips = [];
   let processingShot = false;
 
+  // Turn timer
+  let turnTimerInterval = null;
+  let turnStartTime = null;
+
   // DOM references
   const $status = document.getElementById('status');
   const $roomInfo = document.getElementById('room-info');
@@ -611,13 +650,41 @@
   // ── Helpers ──
 
   function showScreen(id) {
-    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-    document.getElementById(id).classList.add('active');
+    const current = document.querySelector('.screen.active');
+    const next = document.getElementById(id);
+    if (current && current !== next) {
+      current.classList.add('fading-out');
+      current.classList.remove('active');
+      setTimeout(() => current.classList.remove('fading-out'), 300);
+    }
+    next.classList.add('active');
   }
 
   function setStatus(msg, isActive) {
     $status.textContent = msg;
     $status.classList.toggle('active-turn', !!isActive);
+  }
+
+  const $turnTimer = document.getElementById('turn-timer');
+
+  function startTurnTimer() {
+    stopTurnTimer();
+    turnStartTime = Date.now();
+    $turnTimer.textContent = '0:00';
+    turnTimerInterval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - turnStartTime) / 1000);
+      const mins = Math.floor(elapsed / 60);
+      const secs = elapsed % 60;
+      $turnTimer.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
+    }, 1000);
+  }
+
+  function stopTurnTimer() {
+    if (turnTimerInterval) {
+      clearInterval(turnTimerInterval);
+      turnTimerInterval = null;
+    }
+    $turnTimer.textContent = '';
   }
 
   function buildGrid(container, size, onClick) {
@@ -716,6 +783,43 @@
     }
   }
 
+  // ── Menu ──
+
+  const $menuBtn = document.getElementById('menu-btn');
+  const $menuDropdown = document.getElementById('menu-dropdown');
+
+  $menuBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    $menuDropdown.classList.toggle('open');
+  });
+
+  document.addEventListener('click', () => {
+    $menuDropdown.classList.remove('open');
+  });
+
+  document.getElementById('menu-mute').addEventListener('click', () => {
+    muted = !muted;
+    localStorage.setItem('naval-command-muted', muted);
+    updateMuteUI();
+    $menuDropdown.classList.remove('open');
+  });
+  updateMuteUI();
+
+  document.getElementById('menu-new-game').addEventListener('click', () => {
+    $menuDropdown.classList.remove('open');
+    socket.disconnect();
+    // Reset to lobby
+    window.history.replaceState({}, '', basePath || '/');
+    location.reload();
+  });
+
+  document.getElementById('menu-quit').addEventListener('click', () => {
+    $menuDropdown.classList.remove('open');
+    socket.disconnect();
+    window.history.replaceState({}, '', basePath || '/');
+    location.reload();
+  });
+
   // ── Socket events ──
 
   socket.on('joined', (data) => {
@@ -748,19 +852,34 @@
     }
   });
 
+  socket.on('opponent_joined', () => {
+    toast('Opponent has joined!');
+  });
+
   socket.on('opponent_ready', () => {
     toast('Opponent has placed their ships');
   });
 
   socket.on('opponent_disconnected', () => {
     clientLog('info', 'Opponent disconnected');
-    toast('Opponent disconnected', 'error');
-    setStatus('Opponent disconnected — waiting for reconnect...');
+    document.getElementById('disconnect-overlay').classList.add('active');
+  });
+
+  document.getElementById('disconnect-new-game').addEventListener('click', () => {
+    socket.disconnect();
+    window.history.replaceState({}, '', basePath || '/');
+    location.reload();
   });
 
   socket.on('error_msg', (msg) => {
     clientLog('error', `Server error: ${msg}`);
     toast(msg, 'error');
+  });
+
+  const REACTIONS = ['Nice shot!', 'Missed me!', 'Good game', '\u{1F525}', '\u{1F631}'];
+  socket.on('opponent_reaction', (reactionId) => {
+    const msg = REACTIONS[reactionId];
+    if (msg) toast(`Opponent: ${msg}`, 'reaction-toast');
   });
 
   // ── Placement ──
@@ -771,16 +890,28 @@
     shipPlacements = [];
     currentShipIdx = 0;
     orientation = 'h';
+    pendingPreview = null;
+    lastInputWasTouch = false;
 
     const container = document.getElementById('placement-grid');
     placementGrid = buildGrid(container, config.GRID_SIZE, onPlacementClick);
 
     updatePlacementLabel();
+    updateUndoButton();
 
+    // Desktop: live hover preview
     container.addEventListener('mouseover', onPlacementHover);
     container.addEventListener('mouseout', clearPreview);
 
-    // Touch support: show ship preview where finger is
+    // Touch: show preview while dragging, lock on lift
+    container.addEventListener('touchstart', (e) => {
+      lastInputWasTouch = true;
+      const touch = e.touches[0];
+      const el = document.elementFromPoint(touch.clientX, touch.clientY);
+      if (el && el.closest('.cell')) {
+        onPlacementHover({ target: el });
+      }
+    }, { passive: true });
     container.addEventListener('touchmove', (e) => {
       const touch = e.touches[0];
       const el = document.elementFromPoint(touch.clientX, touch.clientY);
@@ -788,14 +919,10 @@
         onPlacementHover({ target: el });
       }
     }, { passive: true });
-    container.addEventListener('touchstart', (e) => {
-      const touch = e.touches[0];
-      const el = document.elementFromPoint(touch.clientX, touch.clientY);
-      if (el && el.closest('.cell')) {
-        onPlacementHover({ target: el });
-      }
-    }, { passive: true });
-    container.addEventListener('touchend', clearPreview);
+    // On touch end, lock the preview instead of clearing it
+    container.addEventListener('touchend', () => {
+      lockPreview();
+    });
   }
 
   function updatePlacementLabel() {
@@ -841,8 +968,37 @@
   function clearPreview() {
     for (let r = 0; r < config.GRID_SIZE; r++) {
       for (let c = 0; c < config.GRID_SIZE; c++) {
-        placementGrid[r][c].classList.remove('ship-preview', 'ship-preview-invalid');
+        placementGrid[r][c].classList.remove('ship-preview', 'ship-preview-invalid', 'ship-preview-locked');
       }
+    }
+  }
+
+  function lockPreview() {
+    if (currentShipIdx >= config.SHIPS.length) return;
+    // Find which cells currently have the preview and lock them
+    let hasPreview = false;
+    let lockedR = -1, lockedC = -1;
+    for (let r = 0; r < config.GRID_SIZE; r++) {
+      for (let c = 0; c < config.GRID_SIZE; c++) {
+        const cell = placementGrid[r][c];
+        if (cell.classList.contains('ship-preview')) {
+          cell.classList.remove('ship-preview');
+          cell.classList.add('ship-preview-locked');
+          if (!hasPreview) { lockedR = r; lockedC = c; }
+          hasPreview = true;
+        }
+      }
+    }
+    if (hasPreview) {
+      // Calculate the anchor cell (top-left of the ship)
+      const size = config.SHIPS[currentShipIdx].size;
+      const cells = getShipCells(lockedR, lockedC, size, orientation);
+      // The anchor is the first cell that matches our grid position
+      // For horizontal ships, anchor is leftmost; for vertical, topmost
+      // lockedR/lockedC will be one of the ship cells — find the anchor
+      const minR = Math.min(...cells.map(c => c.r));
+      const minC = Math.min(...cells.map(c => c.c));
+      pendingPreview = { r: minR, c: minC, orient: orientation };
     }
   }
 
@@ -866,9 +1022,7 @@
     }
   }
 
-  function onPlacementClick(r, c) {
-    if (currentShipIdx >= config.SHIPS.length) return;
-
+  function placeShipAt(r, c) {
     const size = config.SHIPS[currentShipIdx].size;
     const cells = getShipCells(r, c, size, orientation);
 
@@ -878,25 +1032,126 @@
     }
 
     shipPlacements.push({ cells, orientation });
-
     applyShipVisuals(placementGrid, cells, orientation);
-
+    pendingPreview = null;
     currentShipIdx++;
     updatePlacementLabel();
+    updateUndoButton();
   }
 
-  document.getElementById('rotate-btn').addEventListener('click', () => {
-    orientation = orientation === 'h' ? 'v' : 'h';
-    document.getElementById('rotate-btn').textContent = `Rotate (R) — ${orientation === 'h' ? 'Horizontal' : 'Vertical'}`;
-  });
+  function updateUndoButton() {
+    document.getElementById('undo-btn').style.display = shipPlacements.length > 0 ? '' : 'none';
+  }
 
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'r' || e.key === 'R') {
-      if (phase === 'placement') {
-        orientation = orientation === 'h' ? 'v' : 'h';
-        document.getElementById('rotate-btn').textContent = `Rotate (R) — ${orientation === 'h' ? 'Horizontal' : 'Vertical'}`;
+  function rerenderPlacements() {
+    // Clear all ship visuals from the grid
+    for (let r = 0; r < config.GRID_SIZE; r++) {
+      for (let c = 0; c < config.GRID_SIZE; c++) {
+        const cell = placementGrid[r][c];
+        cell.classList.remove('ship', 'ship-placed', 'ship-preview', 'ship-preview-invalid', 'ship-preview-locked');
+        delete cell.dataset.orient;
+        delete cell.dataset.part;
       }
     }
+    // Re-apply remaining placements
+    for (const ship of shipPlacements) {
+      applyShipVisuals(placementGrid, ship.cells, ship.orientation);
+    }
+  }
+
+  function undoLastShip() {
+    if (shipPlacements.length === 0) return;
+    shipPlacements.pop();
+    currentShipIdx--;
+    pendingPreview = null;
+    rerenderPlacements();
+    updatePlacementLabel();
+    updateUndoButton();
+  }
+
+  function randomPlacement() {
+    shipPlacements = [];
+    currentShipIdx = 0;
+    pendingPreview = null;
+    rerenderPlacements();
+
+    for (let i = 0; i < config.SHIPS.length; i++) {
+      const size = config.SHIPS[i].size;
+      let placed = false;
+      for (let attempt = 0; attempt < 1000 && !placed; attempt++) {
+        const r = Math.floor(Math.random() * config.GRID_SIZE);
+        const c = Math.floor(Math.random() * config.GRID_SIZE);
+        const orient = Math.random() > 0.5 ? 'h' : 'v';
+        const cells = getShipCells(r, c, size, orient);
+        if (isValidPlacement(cells)) {
+          shipPlacements.push({ cells, orientation: orient });
+          applyShipVisuals(placementGrid, cells, orient);
+          currentShipIdx++;
+          placed = true;
+        }
+      }
+    }
+    updatePlacementLabel();
+    updateUndoButton();
+  }
+
+  function onPlacementClick(r, c) {
+    if (currentShipIdx >= config.SHIPS.length) return;
+
+    if (lastInputWasTouch) {
+      lastInputWasTouch = false;
+      // Touch: tap-to-preview, tap-again-to-confirm
+      if (pendingPreview && pendingPreview.r === r && pendingPreview.c === c && pendingPreview.orient === orientation) {
+        // Second tap on same cell + same orientation → place the ship
+        clearPreview();
+        placeShipAt(r, c);
+      } else {
+        // First tap or different cell → show locked preview
+        clearPreview();
+        const size = config.SHIPS[currentShipIdx].size;
+        const cells = getShipCells(r, c, size, orientation);
+        const valid = isValidPlacement(cells);
+        for (const { r: cr, c: cc } of cells) {
+          if (cr >= 0 && cr < config.GRID_SIZE && cc >= 0 && cc < config.GRID_SIZE) {
+            placementGrid[cr][cc].classList.add(valid ? 'ship-preview-locked' : 'ship-preview-invalid');
+          }
+        }
+        pendingPreview = valid ? { r, c, orient: orientation } : null;
+      }
+    } else {
+      // Mouse: immediate placement (desktop behavior unchanged)
+      placeShipAt(r, c);
+    }
+  }
+
+  function rotateShip() {
+    orientation = orientation === 'h' ? 'v' : 'h';
+    document.getElementById('rotate-btn').textContent = `Rotate (R) — ${orientation === 'h' ? 'Horizontal' : 'Vertical'}`;
+    // Re-render locked preview in new orientation
+    if (pendingPreview) {
+      clearPreview();
+      const { r, c } = pendingPreview;
+      const size = config.SHIPS[currentShipIdx].size;
+      const cells = getShipCells(r, c, size, orientation);
+      const valid = isValidPlacement(cells);
+      for (const { r: cr, c: cc } of cells) {
+        if (cr >= 0 && cr < config.GRID_SIZE && cc >= 0 && cc < config.GRID_SIZE) {
+          placementGrid[cr][cc].classList.add(valid ? 'ship-preview-locked' : 'ship-preview-invalid');
+        }
+      }
+      pendingPreview = valid ? { r, c, orient: orientation } : null;
+    }
+  }
+
+  document.getElementById('rotate-btn').addEventListener('click', rotateShip);
+  document.getElementById('undo-btn').addEventListener('click', undoLastShip);
+  document.getElementById('random-btn').addEventListener('click', randomPlacement);
+
+  document.addEventListener('keydown', (e) => {
+    if (phase !== 'placement') return;
+    if (e.key === 'r' || e.key === 'R') rotateShip();
+    if (e.key === 'z' || e.key === 'Z') undoLastShip();
+    if (e.key === 'q' || e.key === 'Q') randomPlacement();
   });
 
   document.getElementById('confirm-placement').addEventListener('click', () => {
@@ -947,6 +1202,15 @@
 
     document.getElementById('missile-btn').addEventListener('click', () => selectWeapon('missile'));
     document.getElementById('nuke-btn').addEventListener('click', () => selectWeapon('nuke'));
+
+    document.querySelectorAll('.reaction-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = parseInt(btn.dataset.reaction);
+        socket.emit('reaction', id);
+        btn.disabled = true;
+        setTimeout(() => { btn.disabled = false; }, 3000);
+      });
+    });
 
     updateNukeCount();
     renderShipStatus();
@@ -1023,6 +1287,12 @@
       return;
     }
 
+    const cell = attackGrid[r][c];
+    if (cell.classList.contains('hit') || cell.classList.contains('miss')) {
+      toast('Already targeted — choose new coordinates', 'error');
+      return;
+    }
+
     clientLog('info', 'Firing', { r, c, weapon: selectedWeapon });
     socket.emit('fire', { r, c, weapon: selectedWeapon });
   }
@@ -1032,6 +1302,7 @@
     clientLog('info', `Turn event received`, { turnIdx, myTurn, processingShot });
     updateClickableCells();
     updateTurnIndicator();
+    startTurnTimer();
     if (!processingShot) {
       setStatus(myTurn ? 'Your turn — fire!' : "Opponent's turn...", myTurn);
     }
@@ -1113,6 +1384,7 @@
   }
 
   function showGameOver(won) {
+    stopTurnTimer();
     const $title = document.getElementById('game-over-title');
     const $msg = document.getElementById('game-over-msg');
     const $rematchStatus = document.getElementById('rematch-status');
@@ -1153,6 +1425,7 @@
 
   socket.on('rematch_start', (data) => {
     clientLog('info', 'Rematch starting');
+    stopTurnTimer();
     // Reset client state
     config = data.config;
     myNukes = config.NUKES_PER_PLAYER;
@@ -1215,6 +1488,8 @@
     } else {
       // ── Standard missile ──
       const { r, c, result } = results[0];
+      const targetGrid = isMyShot ? attackGrid : defenseGrid;
+      await animateMissile(targetGrid[r][c]);
       applyCellResult(r, c, result, isMyShot, false);
 
       if (result === 'hit') {
@@ -1258,6 +1533,34 @@
       await new Promise(resolve => setTimeout(resolve, 800));
       showGameOver(winner === playerIdx);
     }
+  }
+
+  function animateMissile(targetCell) {
+    return new Promise((resolve) => {
+      try {
+        const rect = targetCell.getBoundingClientRect();
+        const targetX = rect.left + rect.width / 2;
+        const targetY = rect.top + rect.height / 2;
+
+        const missile = document.createElement('div');
+        missile.className = 'missile-fly';
+        // Start from top center of viewport
+        missile.style.left = targetX + 'px';
+        missile.style.top = '-40px';
+        missile.style.setProperty('--target-x', targetX + 'px');
+        missile.style.setProperty('--target-y', targetY + 'px');
+        document.body.appendChild(missile);
+
+        missile.addEventListener('animationend', () => {
+          missile.remove();
+          resolve();
+        });
+        // Safety timeout
+        setTimeout(() => { missile.remove(); resolve(); }, 1800);
+      } catch (e) {
+        resolve();
+      }
+    });
   }
 
   function applyCellResult(r, c, result, isMyShot, isNuke) {

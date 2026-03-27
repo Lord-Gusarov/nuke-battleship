@@ -58,6 +58,10 @@ const CONFIG = {
 // Active games: roomId -> game state
 const games = new Map();
 
+// Disconnect grace timers: "roomId:playerIdx" -> timeout handle
+const disconnectTimers = new Map();
+const DISCONNECT_GRACE_MS = 15000;
+
 function createEmptyGrid() {
   return Array.from({ length: CONFIG.GRID_SIZE }, () =>
     Array(CONFIG.GRID_SIZE).fill(null)
@@ -256,6 +260,15 @@ io.on('connection', (socket) => {
         if (!game.players[i].socketId) {
           idx = i;
           game.players[i].socketId = socket.id;
+
+          // Cancel disconnect grace timer if this slot had one
+          const timerKey = `${roomId}:${i}`;
+          const pending = disconnectTimers.get(timerKey);
+          if (pending) {
+            clearTimeout(pending);
+            disconnectTimers.delete(timerKey);
+            log('REJOIN', `Grace timer cancelled — player reconnected`, { roomId, playerIdx: i });
+          }
           break;
         }
       }
@@ -288,6 +301,10 @@ io.on('connection', (socket) => {
 
     const bothConnected = game.players[0].socketId && game.players[1].socketId;
     if (bothConnected && game.phase === 'waiting') {
+      // Notify the player who was already waiting
+      const waitingSocket = game.players[1 - idx].socketId;
+      if (waitingSocket) io.to(waitingSocket).emit('opponent_joined');
+
       game.phase = 'placement';
       log('PHASE', `Both players connected, entering placement`, { roomId });
       io.to(roomId).emit('phase', 'placement');
@@ -416,6 +433,17 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('reaction', (reactionId) => {
+    if (!currentRoom || playerIdx === null) return;
+    const game = games.get(currentRoom);
+    if (!game || (game.phase !== 'battle' && game.phase !== 'finished')) return;
+    if (typeof reactionId !== 'number' || reactionId < 0 || reactionId > 4) return;
+    const opponentSocket = game.players[1 - playerIdx].socketId;
+    if (opponentSocket) {
+      io.to(opponentSocket).emit('opponent_reaction', reactionId);
+    }
+  });
+
   socket.on('request_rematch', () => {
     if (!currentRoom || playerIdx === null) return;
     const game = games.get(currentRoom);
@@ -463,16 +491,32 @@ io.on('connection', (socket) => {
     if (!game) return;
 
     game.players[playerIdx].socketId = null;
+    const timerKey = `${currentRoom}:${playerIdx}`;
 
-    const opponentSocket = game.players[1 - playerIdx].socketId;
-    if (opponentSocket) {
-      io.to(opponentSocket).emit('opponent_disconnected');
-    }
+    // Start grace period — give the player time to reconnect (e.g. app switch on mobile)
+    const timer = setTimeout(() => {
+      disconnectTimers.delete(timerKey);
+      const g = games.get(currentRoom);
+      if (!g) return;
 
-    if (!game.players[0].socketId && !game.players[1].socketId) {
-      log('CLEANUP', `Both disconnected, removing game`, { roomId: currentRoom, phase: game.phase });
-      games.delete(currentRoom);
-    }
+      // Player didn't reconnect in time
+      if (!g.players[playerIdx].socketId) {
+        log('DISC', `Grace period expired, finalizing disconnect`, { roomId: currentRoom, playerIdx });
+
+        const opponentSocket = g.players[1 - playerIdx].socketId;
+        if (opponentSocket) {
+          io.to(opponentSocket).emit('opponent_disconnected');
+        }
+
+        if (!g.players[0].socketId && !g.players[1].socketId) {
+          log('CLEANUP', `Both disconnected, removing game`, { roomId: currentRoom, phase: g.phase });
+          games.delete(currentRoom);
+        }
+      }
+    }, DISCONNECT_GRACE_MS);
+
+    disconnectTimers.set(timerKey, timer);
+    log('DISC', `Grace period started (${DISCONNECT_GRACE_MS / 1000}s)`, { roomId: currentRoom, playerIdx });
   });
 });
 
