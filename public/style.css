@@ -90,6 +90,33 @@ body::after {
    1b. MENU
    ═══════════════════════════════════════════ */
 
+/* Language toggle button */
+#lang-btn {
+  position: fixed;
+  top: 0.75rem;
+  right: 3.5rem;
+  z-index: 1000;
+  background: rgba(4, 14, 26, 0.85);
+  border: 1px solid var(--radar-green-dim);
+  color: var(--radar-amber);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: bold;
+  width: 2.4rem;
+  height: 2.4rem;
+  cursor: pointer;
+  line-height: 1;
+  border-radius: 2px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+#lang-btn:hover, #lang-btn:active {
+  border-color: var(--radar-amber);
+  text-shadow: 0 0 10px rgba(255, 184, 54, 0.5);
+  color: #fff;
+}
+
 #menu-btn {
   position: fixed;
   top: 0.75rem;
@@ -155,6 +182,14 @@ body::after {
   color: var(--text-dim);
 }
 
+#menu-forfeit {
+  color: var(--radar-red);
+}
+
+#menu-forfeit:hover, #menu-forfeit:active {
+  background: rgba(255, 58, 58, 0.1);
+}
+
 /* ═══════════════════════════════════════════
    2. TYPOGRAPHY
    ═══════════════════════════════════════════ */
@@ -194,6 +229,18 @@ h1 {
   color: var(--text-dim);
   letter-spacing: 2px;
   opacity: 0.6;
+  transition: color 0.3s, opacity 0.3s;
+}
+
+#turn-timer.timer-urgent {
+  color: var(--radar-red);
+  opacity: 1;
+  animation: timerPulse 1s ease-in-out infinite;
+}
+
+@keyframes timerPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 
 #status.active-turn {
@@ -496,6 +543,17 @@ h1 {
   border-color: var(--radar-green);
 }
 
+.cmd-btn.ai-btn {
+  background: rgba(255, 176, 57, 0.1);
+  border-color: var(--radar-amber);
+  color: var(--radar-amber);
+}
+
+.cmd-btn.ai-btn:hover, .cmd-btn.ai-btn:active {
+  box-shadow: 0 0 20px rgba(255, 176, 57, 0.4);
+  border-color: var(--radar-amber);
+}
+
 .or {
   color: var(--text-dim);
   font-size: 0.7rem;
@@ -514,11 +572,52 @@ h1 {
   letter-spacing: 1px;
 }
 
-.nuke-setting input {
-  width: 50px;
-  padding: 0.4rem;
-  border-radius: 2px;
+.nuke-stepper {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.stepper-btn {
+  width: 32px;
+  height: 32px;
   border: 1px solid var(--radar-green-dim);
+  background: rgba(57, 255, 133, 0.05);
+  color: var(--radar-green);
+  font-family: var(--font-mono);
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stepper-btn:first-child {
+  border-radius: 2px 0 0 2px;
+}
+
+.stepper-btn:last-child {
+  border-radius: 0 2px 2px 0;
+}
+
+.stepper-btn:hover {
+  background: rgba(57, 255, 133, 0.15);
+  border-color: var(--radar-green);
+}
+
+.stepper-btn:active {
+  background: rgba(57, 255, 133, 0.25);
+}
+
+.nuke-stepper input {
+  width: 40px;
+  height: 32px;
+  padding: 0;
+  border-radius: 0;
+  border: 1px solid var(--radar-green-dim);
+  border-left: none;
+  border-right: none;
   background: rgba(0, 0, 0, 0.5);
   color: var(--radar-amber);
   font-family: var(--font-mono);
@@ -526,10 +625,132 @@ h1 {
   text-align: center;
 }
 
-.nuke-setting input:focus {
+.nuke-stepper input::placeholder {
+  color: var(--radar-amber);
+  opacity: 0.35;
+}
+
+.nuke-stepper input:focus {
   outline: none;
   border-color: var(--radar-amber);
   box-shadow: 0 0 10px rgba(255, 184, 54, 0.2);
+}
+
+/* Difficulty Setting */
+.difficulty-setting {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.difficulty-setting label {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  letter-spacing: 1px;
+}
+
+.difficulty-toggle {
+  display: flex;
+  gap: 0;
+}
+
+.diff-btn {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 1px;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--radar-green-dim);
+  background: rgba(0, 0, 0, 0.5);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.diff-btn:first-child {
+  border-radius: 2px 0 0 2px;
+}
+
+.diff-btn:last-child {
+  border-radius: 0 2px 2px 0;
+  border-left: none;
+}
+
+.diff-btn.selected {
+  background: rgba(255, 184, 54, 0.15);
+  color: var(--radar-amber);
+  border-color: var(--radar-amber);
+  box-shadow: 0 0 8px rgba(255, 184, 54, 0.2);
+}
+
+.diff-btn:last-child.selected {
+  border-left: 1px solid var(--radar-amber);
+}
+
+.diff-btn:hover:not(.selected) {
+  border-color: var(--radar-green);
+  color: var(--radar-green);
+}
+
+/* Waiting Room */
+.waiting-room-box {
+  gap: 1.2rem;
+  padding: 2.5rem;
+}
+
+.room-code-display {
+  font-size: 2.5rem;
+  letter-spacing: 8px;
+  color: var(--radar-green);
+  text-shadow: 0 0 20px var(--radar-green-glow), 0 0 40px var(--radar-green-glow);
+  border: 1px solid var(--radar-green-dim);
+  padding: 0.8rem 1.5rem;
+  background: rgba(57, 255, 133, 0.05);
+  font-family: var(--font-mono);
+  user-select: all;
+  text-transform: uppercase;
+}
+
+.room-code-hint {
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  letter-spacing: 2px;
+  text-align: center;
+}
+
+.waiting-indicator {
+  margin-top: 0.5rem;
+}
+
+.waiting-dots {
+  color: var(--radar-green-dim);
+  font-size: 0.8rem;
+  letter-spacing: 2px;
+}
+
+.nuke-info {
+  font-size: 0.7rem;
+  color: var(--radar-amber);
+  letter-spacing: 1px;
+}
+
+/* Terminal panels swap inside the same box */
+.terminal-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.8rem;
+  width: 100%;
+}
+
+@media (max-width: 480px) {
+  .room-code-display {
+    font-size: 1.8rem;
+    letter-spacing: 5px;
+    padding: 0.6rem 1rem;
+  }
+  .waiting-room-box {
+    padding: 1.5rem;
+  }
 }
 
 /* ═══════════════════════════════════════════
@@ -886,6 +1107,65 @@ h1 {
   100% { background: rgba(57, 255, 133, 0.05); }
 }
 
+/* ── Sunk ship silhouette (attack grid) ── */
+.cell.sunk-ship {
+  background: #5e1b1b;
+  border-color: rgba(255, 58, 58, 0.4);
+  box-shadow: inset 0 0 10px rgba(255, 58, 58, 0.2);
+  animation: sunkShipReveal 0.6s ease-out;
+}
+
+/* Bow shapes */
+.cell.sunk-ship[data-sunk-part="bow"][data-sunk-orient="h"] {
+  border-radius: 50% 2px 2px 50%;
+  background: linear-gradient(90deg, rgba(255,58,58,0.15) 0%, #5e1b1b 60%);
+}
+.cell.sunk-ship[data-sunk-part="bow"][data-sunk-orient="v"] {
+  border-radius: 50% 50% 2px 2px;
+  background: linear-gradient(180deg, rgba(255,58,58,0.15) 0%, #5e1b1b 60%);
+}
+
+/* Stern shapes */
+.cell.sunk-ship[data-sunk-part="stern"][data-sunk-orient="h"] {
+  border-radius: 2px 40% 40% 2px;
+  background: linear-gradient(90deg, #5e1b1b 40%, rgba(255,58,58,0.15) 100%);
+}
+.cell.sunk-ship[data-sunk-part="stern"][data-sunk-orient="v"] {
+  border-radius: 2px 2px 40% 40%;
+  background: linear-gradient(180deg, #5e1b1b 40%, rgba(255,58,58,0.15) 100%);
+}
+
+/* Mid section */
+.cell.sunk-ship[data-sunk-part="mid"] {
+  background: #5e1b1b;
+}
+
+/* Hull deck line on mid cells */
+.cell.sunk-ship[data-sunk-part="mid"]::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+}
+.cell.sunk-ship[data-sunk-part="mid"][data-sunk-orient="h"]::after {
+  top: 45%;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: rgba(255, 58, 58, 0.15);
+}
+.cell.sunk-ship[data-sunk-part="mid"][data-sunk-orient="v"]::after {
+  left: 45%;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: rgba(255, 58, 58, 0.15);
+}
+
+@keyframes sunkShipReveal {
+  0%   { box-shadow: inset 0 0 20px rgba(255, 58, 58, 0.8), 0 0 15px rgba(255, 58, 58, 0.6); }
+  100% { box-shadow: inset 0 0 10px rgba(255, 58, 58, 0.2); }
+}
+
 /* Missile fly animation */
 .missile-fly {
   position: fixed;
@@ -1043,6 +1323,22 @@ h1 {
   letter-spacing: 2px;
   text-shadow: 0 0 10px var(--radar-green-glow);
 }
+
+.mobile-hint {
+  display: none;
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--radar-green);
+  letter-spacing: 1px;
+  padding: 0.5rem 1rem;
+  opacity: 0.85;
+  text-shadow: 0 0 8px var(--radar-green-glow);
+  border: 1px solid var(--radar-green-dim);
+  border-radius: 8px;
+  margin: 0.5rem auto;
+  max-width: 360px;
+}
+.mobile-hint.show { display: block; }
 
 /* ═══════════════════════════════════════════
    8. WEAPON SELECTOR
@@ -1357,6 +1653,40 @@ h1 {
   letter-spacing: 3px;
 }
 
+/* ── Launch mode (attacker fires nuke) ── */
+#nuke-countdown.launch-mode {
+  background: rgba(0, 14, 26, 0.92);
+}
+
+#nuke-countdown.launch-mode .siren-bar {
+  animation: launchBar 1s ease-in-out infinite alternate;
+}
+
+@keyframes launchBar {
+  0%   { background: var(--radar-green); box-shadow: 0 0 30px var(--radar-green); }
+  100% { background: var(--radar-amber); box-shadow: 0 0 30px var(--radar-amber); }
+}
+
+#nuke-countdown.launch-mode .countdown-icon {
+  color: var(--radar-green);
+  text-shadow: 0 0 30px rgba(57, 255, 133, 0.5);
+}
+
+#nuke-countdown.launch-mode .countdown-text {
+  color: var(--radar-green);
+  animation: launchTextGlow 1s ease-in-out infinite alternate;
+}
+
+@keyframes launchTextGlow {
+  0%   { color: var(--radar-green); text-shadow: 0 0 15px var(--radar-green); }
+  100% { color: var(--radar-amber); text-shadow: 0 0 25px var(--radar-amber); }
+}
+
+#nuke-countdown.launch-mode .countdown-number {
+  color: var(--radar-green);
+  text-shadow: 0 0 40px rgba(57, 255, 133, 0.6), 0 0 80px rgba(57, 255, 133, 0.2);
+}
+
 /* ═══════════════════════════════════════════
    13. TOAST NOTIFICATIONS
    ═══════════════════════════════════════════ */
@@ -1520,6 +1850,40 @@ h1 {
   color: var(--text-dim);
   font-size: 0.9rem;
   letter-spacing: 2px;
+}
+
+#game-over-stats {
+  display: flex;
+  gap: 1.2rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: 500px;
+}
+
+#game-over-stats .stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  min-width: 70px;
+}
+
+#game-over-stats .stat-val {
+  font-size: 1.4rem;
+  color: var(--radar-green);
+  font-weight: 400;
+  letter-spacing: 2px;
+}
+
+#game-over.loser #game-over-stats .stat-val {
+  color: var(--radar-amber);
+}
+
+#game-over-stats .stat-label {
+  font-size: 0.55rem;
+  color: var(--text-dim);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
 }
 
 #rematch-controls {

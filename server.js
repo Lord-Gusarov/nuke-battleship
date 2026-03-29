@@ -3,6 +3,11 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const crypto = require('crypto');
+const { generateAIPlacement, createAIState, chooseAIShot, updateAIState } = require('./ai');
+const {
+  CONFIG, createEmptyGrid, createPlayerState, createGame,
+  validatePlacement, checkSunk, checkAllSunk, processShot, placeShipsOnPlayer,
+} = require('./game-logic');
 
 const BASE_PATH = (process.env.BASE_PATH || '').replace(/\/+$/, '');
 
@@ -42,19 +47,6 @@ app.post(`${BASE_PATH}/client-log`, (req, res) => {
   res.sendStatus(204);
 });
 
-// Game configuration
-const CONFIG = {
-  GRID_SIZE: 10,
-  NUKES_PER_PLAYER: 2, // default, overridable per room
-  SHIPS: [
-    { name: 'Carrier', size: 5 },
-    { name: 'Battleship', size: 4 },
-    { name: 'Cruiser', size: 3 },
-    { name: 'Submarine', size: 3 },
-    { name: 'Destroyer', size: 2 },
-  ],
-};
-
 // Active games: roomId -> game state
 const games = new Map();
 
@@ -62,149 +54,73 @@ const games = new Map();
 const disconnectTimers = new Map();
 const DISCONNECT_GRACE_MS = 15000;
 
-function createEmptyGrid() {
-  return Array.from({ length: CONFIG.GRID_SIZE }, () =>
-    Array(CONFIG.GRID_SIZE).fill(null)
-  );
+// ── AI helpers ──
+
+function setupAIPlayer(game) {
+  const aiPlayer = game.players[1];
+  const configForAI = { ...CONFIG, NUKES_PER_PLAYER: game.nukesPerPlayer, difficulty: game.difficulty || 'normal' };
+  const ships = generateAIPlacement(configForAI);
+
+  aiPlayer.socketId = '__AI__';
+  placeShipsOnPlayer(aiPlayer, ships);
+
+  game.isAI = true;
+  game.ai = createAIState(configForAI);
+  game.ai.nukesRemaining = game.nukesPerPlayer;
 }
 
-function createPlayerState() {
-  return {
-    socketId: null,
-    shipGrid: createEmptyGrid(),   // 'S' = ship segment
-    shotGrid: createEmptyGrid(),   // 'hit' | 'miss' | 'nuke_hit' | 'nuke_miss'
-    ships: [],                     // [{ name, cells: [{r,c}], sunk: false }]
-    shipsPlaced: false,
-    nukes: CONFIG.NUKES_PER_PLAYER,
-    alive: true,
-  };
-}
+function scheduleAITurn(game, roomId) {
+  const delay = 3000;
+  setTimeout(() => {
+    const g = games.get(roomId);
+    if (!g || g.phase !== 'battle' || g.turn !== 1 || !g.isAI) return;
 
-function createGame(roomId, nukesPerPlayer) {
-  const nukes = Math.max(0, Math.min(10, Math.floor(nukesPerPlayer || CONFIG.NUKES_PER_PLAYER)));
-  const game = {
-    roomId,
-    nukesPerPlayer: nukes,
-    players: [createPlayerState(), createPlayerState()],
-    phase: 'waiting',
-    turn: 0,
-    winner: null,
-  };
-  game.players[0].nukes = nukes;
-  game.players[1].nukes = nukes;
-  return game;
-}
+    const configForAI = { ...CONFIG, NUKES_PER_PLAYER: g.nukesPerPlayer, difficulty: g.difficulty || 'normal' };
+    const shot = chooseAIShot(g.ai, g.players[1].shotGrid, configForAI);
 
-function validatePlacement(ships) {
-  if (!Array.isArray(ships) || ships.length !== CONFIG.SHIPS.length) return false;
+    log('AI_FIRE', `AI firing`, { roomId, r: shot.r, c: shot.c, weapon: shot.weapon });
 
-  const occupied = new Set();
-
-  for (let i = 0; i < ships.length; i++) {
-    const ship = ships[i];
-    const expected = CONFIG.SHIPS[i];
-    if (!ship || !Array.isArray(ship.cells) || ship.cells.length !== expected.size) return false;
-
-    const cells = ship.cells;
-    for (const { r, c } of cells) {
-      if (r < 0 || r >= CONFIG.GRID_SIZE || c < 0 || c >= CONFIG.GRID_SIZE) return false;
-      const key = `${r},${c}`;
-      if (occupied.has(key)) return false;
-      occupied.add(key);
+    const result = processShot(g, 1, shot.r, shot.c, shot.weapon);
+    if (result.error) {
+      log('AI', `Shot error, retrying`, { roomId, error: result.error });
+      scheduleAITurn(g, roomId);
+      return;
     }
 
-    const allSameRow = cells.every(cell => cell.r === cells[0].r);
-    const allSameCol = cells.every(cell => cell.c === cells[0].c);
-    if (!allSameRow && !allSameCol) return false;
+    if (shot.weapon === 'nuke') g.ai.nukesRemaining = g.players[1].nukes;
 
-    if (allSameRow) {
-      const cols = cells.map(cell => cell.c).sort((a, b) => a - b);
-      for (let j = 1; j < cols.length; j++) {
-        if (cols[j] !== cols[j - 1] + 1) return false;
-      }
-    } else {
-      const rows = cells.map(cell => cell.r).sort((a, b) => a - b);
-      for (let j = 1; j < rows.length; j++) {
-        if (rows[j] !== rows[j - 1] + 1) return false;
-      }
-    }
-  }
+    // Build sunk ship objects with cells for AI state update
+    const sunkNames = result.sunkShips.map(s => s.name);
+    const newlySunk = g.players[0].ships.filter(s => s.sunk && sunkNames.includes(s.name));
+    updateAIState(g.ai, shot, result.results, newlySunk, configForAI);
 
-  return true;
-}
-
-function checkSunk(playerState) {
-  for (const ship of playerState.ships) {
-    if (ship.sunk) continue;
-    const allHit = ship.cells.every(({ r, c }) => {
-      const val = playerState.shipGrid[r][c];
-      return val === 'hit';
+    log('AI_RESULT', `AI shot resolved`, {
+      roomId,
+      weapon: shot.weapon,
+      hits: result.results.filter(r => r.result === 'hit').length,
+      misses: result.results.filter(r => r.result === 'miss').length,
+      sunkShips: result.sunkShips,
+      gameOver: result.gameOver,
+      aiMode: g.ai.mode,
+      hitStackLen: g.ai.hitStack.length,
     });
-    if (allHit) {
-      ship.sunk = true;
-    }
-  }
-}
 
-function checkAllSunk(playerState) {
-  return playerState.ships.every(s => s.sunk);
-}
+    io.to(roomId).emit('shot_result', {
+      attackerIdx: 1,
+      results: result.results,
+      sunkShips: result.sunkShips,
+      gameOver: result.gameOver,
+      winner: result.gameOver ? 1 : null,
+      weapon: result.weapon,
+      nukes: [g.players[0].nukes, g.players[1].nukes],
+    });
 
-function processShot(game, attackerIdx, r, c, weapon) {
-  const defenderIdx = 1 - attackerIdx;
-  const attacker = game.players[attackerIdx];
-  const defender = game.players[defenderIdx];
-  const results = [];
-
-  let targets;
-  if (weapon === 'nuke') {
-    if (attacker.nukes <= 0) return { error: 'No nukes remaining' };
-    attacker.nukes--;
-    targets = [];
-    for (let dr = -1; dr <= 1; dr++) {
-      for (let dc = -1; dc <= 1; dc++) {
-        const nr = r + dr;
-        const nc = c + dc;
-        if (nr >= 0 && nr < CONFIG.GRID_SIZE && nc >= 0 && nc < CONFIG.GRID_SIZE) {
-          targets.push({ r: nr, c: nc });
-        }
-      }
-    }
-  } else {
-    targets = [{ r, c }];
-  }
-
-  for (const t of targets) {
-    if (attacker.shotGrid[t.r][t.c]) continue;
-
-    if (defender.shipGrid[t.r][t.c] === 'S') {
-      defender.shipGrid[t.r][t.c] = 'hit';
-      attacker.shotGrid[t.r][t.c] = 'hit';
-      results.push({ r: t.r, c: t.c, result: 'hit' });
+    if (!result.gameOver) {
+      io.to(roomId).emit('turn', g.turn);
     } else {
-      attacker.shotGrid[t.r][t.c] = 'miss';
-      results.push({ r: t.r, c: t.c, result: 'miss' });
+      log('GAME_OVER', `AI won`, { roomId });
     }
-  }
-
-  if (results.length === 0) {
-    return { error: 'All targeted cells already shot' };
-  }
-
-  checkSunk(defender);
-  const sunkShips = defender.ships.filter(s => s.sunk).map(s => s.name);
-
-  let gameOver = false;
-  if (checkAllSunk(defender)) {
-    game.phase = 'finished';
-    game.winner = attackerIdx;
-    defender.alive = false;
-    gameOver = true;
-  }
-
-  game.turn = defenderIdx;
-
-  return { results, sunkShips, gameOver, weapon };
+  }, delay);
 }
 
 // Routes
@@ -314,6 +230,35 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('join_ai_game', (data) => {
+    const nukes = (data && typeof data === 'object') ? data.nukes : undefined;
+    const difficulty = (data && typeof data === 'object' && (data.difficulty === 'hard' || data.difficulty === 'normal')) ? data.difficulty : 'normal';
+    const roomId = `ai-${crypto.randomBytes(4).toString('hex')}`;
+    const game = createGame(roomId, nukes);
+    game.difficulty = difficulty;
+    games.set(roomId, game);
+
+    // Human is player 0
+    game.players[0].socketId = socket.id;
+    currentRoom = roomId;
+    playerIdx = 0;
+    socket.join(roomId);
+
+    // AI is player 1
+    setupAIPlayer(game);
+
+    game.phase = 'placement';
+    log('AI_GAME', `AI game created`, { roomId, nukesPerPlayer: game.nukesPerPlayer, difficulty });
+
+    socket.emit('joined', {
+      playerIdx: 0,
+      config: { ...CONFIG, NUKES_PER_PLAYER: game.nukesPerPlayer },
+      roomId,
+      isAI: true,
+    });
+    socket.emit('phase', 'placement');
+  });
+
   socket.on('place_ships', (ships) => {
     if (!currentRoom || playerIdx === null) {
       log('WARN', `place_ships from unjoined socket`, { socketId: socket.id });
@@ -337,25 +282,13 @@ io.on('connection', (socket) => {
       return;
     }
 
-    player.ships = ships.map((s, i) => ({
-      name: CONFIG.SHIPS[i].name,
-      cells: s.cells.map(({ r, c }) => ({ r, c })),
-      sunk: false,
-    }));
-
-    for (const ship of player.ships) {
-      for (const { r, c } of ship.cells) {
-        player.shipGrid[r][c] = 'S';
-      }
-    }
-
-    player.shipsPlaced = true;
+    placeShipsOnPlayer(player, ships);
     socket.emit('ships_confirmed');
 
     log('PLACE', `Ships placed`, { roomId: currentRoom, playerIdx });
 
     const opponentSocket = game.players[1 - playerIdx].socketId;
-    if (opponentSocket) {
+    if (opponentSocket && opponentSocket !== '__AI__') {
       io.to(opponentSocket).emit('opponent_ready');
     }
 
@@ -428,9 +361,31 @@ io.on('connection', (socket) => {
 
     if (!result.gameOver) {
       io.to(currentRoom).emit('turn', game.turn);
+      // Trigger AI turn if it's the computer's turn
+      if (game.isAI && game.turn === 1) {
+        scheduleAITurn(game, currentRoom);
+      }
     } else {
       log('GAME_OVER', `Game finished`, { roomId: currentRoom, winner: playerIdx });
     }
+  });
+
+  socket.on('forfeit', () => {
+    if (!currentRoom || playerIdx === null) return;
+    const game = games.get(currentRoom);
+    if (!game || game.phase !== 'battle') return;
+
+    const winnerIdx = 1 - playerIdx;
+    game.phase = 'finished';
+    game.winner = winnerIdx;
+    game.players[playerIdx].alive = false;
+
+    log('FORFEIT', `Player forfeited`, { roomId: currentRoom, playerIdx, winner: winnerIdx });
+
+    io.to(currentRoom).emit('forfeit_result', {
+      loserIdx: playerIdx,
+      winnerIdx,
+    });
   });
 
   socket.on('reaction', (reactionId) => {
@@ -452,32 +407,45 @@ io.on('connection', (socket) => {
     if (!game.rematchVotes) game.rematchVotes = [false, false];
     game.rematchVotes[playerIdx] = true;
 
+    // AI auto-accepts rematch
+    if (game.isAI) game.rematchVotes[1] = true;
+
     log('REMATCH', `Player requested rematch`, { roomId: currentRoom, playerIdx, votes: game.rematchVotes });
 
-    // Notify opponent
+    // Notify opponent (skip for AI)
     const opponentSocket = game.players[1 - playerIdx].socketId;
-    if (opponentSocket) {
+    if (opponentSocket && opponentSocket !== '__AI__') {
       io.to(opponentSocket).emit('opponent_wants_rematch');
     }
 
     // Both agreed — reset the game
     if (game.rematchVotes[0] && game.rematchVotes[1]) {
-      log('REMATCH', `Both agreed, resetting game`, { roomId: currentRoom, nukesPerPlayer: game.nukesPerPlayer });
+      const wasAI = game.isAI;
+      log('REMATCH', `Both agreed, resetting game`, { roomId: currentRoom, nukesPerPlayer: game.nukesPerPlayer, isAI: wasAI });
 
-      // Preserve socket IDs and nuke config
+      // Preserve socket IDs, nuke config, and difficulty
       const s0 = game.players[0].socketId;
       const s1 = game.players[1].socketId;
       const nukes = game.nukesPerPlayer;
+      const difficulty = game.difficulty || 'normal';
 
       // Reset to fresh state
       const fresh = createGame(currentRoom, nukes);
+      fresh.difficulty = difficulty;
       fresh.players[0].socketId = s0;
       fresh.players[1].socketId = s1;
       fresh.phase = 'placement';
+
+      if (wasAI) {
+        setupAIPlayer(fresh);
+      }
+
       games.set(currentRoom, fresh);
 
       io.to(currentRoom).emit('rematch_start', {
         config: { ...CONFIG, NUKES_PER_PLAYER: nukes },
+        isAI: wasAI,
+        difficulty,
       });
       io.to(currentRoom).emit('phase', 'placement');
     }
@@ -491,6 +459,14 @@ io.on('connection', (socket) => {
     if (!game) return;
 
     game.players[playerIdx].socketId = null;
+
+    // AI games: clean up immediately when human disconnects
+    if (game.isAI) {
+      log('CLEANUP', `AI game — human disconnected, removing game`, { roomId: currentRoom });
+      games.delete(currentRoom);
+      return;
+    }
+
     const timerKey = `${currentRoom}:${playerIdx}`;
 
     // Start grace period — give the player time to reconnect (e.g. app switch on mobile)

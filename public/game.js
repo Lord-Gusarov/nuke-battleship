@@ -3,6 +3,15 @@
   const basePath = location.pathname.replace(/\/+$/, '');
   const socket = io({ path: `${basePath}/socket.io/` });
 
+  // ── i18n helper ──
+  const t = (key, params) => I18n.t(key, params);
+
+  // Ship name translation helper
+  function shipName(name) {
+    const key = 'ship_' + name.toLowerCase();
+    return t(key);
+  }
+
   // ── Client logging — sends to server /client-log endpoint ──
 
   let _logPlayerIdx = null;
@@ -55,7 +64,7 @@
 
   function updateMuteUI() {
     const btn = document.getElementById('menu-mute');
-    btn.textContent = muted ? '\u266B UNMUTE SOUNDS' : '\u266B MUTE SOUNDS';
+    btn.textContent = muted ? t('unmute_sounds') : t('mute_sounds');
     btn.classList.toggle('muted', muted);
   }
 
@@ -92,34 +101,34 @@
     clientLog('error', 'Socket disconnected', { reason });
     // Deliberate disconnects don't need reconnecting UI
     if (reason === 'io server disconnect' || reason === 'io client disconnect') return;
-    setStatus('RECONNECTING...');
+    setStatus(t('reconnecting'));
     $status.classList.add('reconnecting');
   });
 
   socket.io.on('reconnect', (attemptNumber) => {
     clientLog('info', 'Socket reconnected', { attemptNumber });
     $status.classList.remove('reconnecting');
-    toast('Connection restored!');
+    toast(t('connection_restored'));
     if (roomId) socket.emit('join_room', roomId);
   });
 
   socket.io.on('reconnect_attempt', (attempt) => {
     clientLog('info', 'Reconnection attempt', { attempt });
-    setStatus(`RECONNECTING... (attempt ${attempt})`);
+    setStatus(t('reconnecting_attempt', { attempt }));
   });
 
   socket.io.on('reconnect_failed', () => {
     clientLog('error', 'Reconnection failed');
     $status.classList.remove('reconnecting');
     const overlay = document.getElementById('disconnect-overlay');
-    overlay.querySelector('h2').textContent = 'CONNECTION LOST';
-    overlay.querySelector('p').textContent = 'Unable to reconnect to server';
+    overlay.querySelector('h2').textContent = t('connection_lost');
+    overlay.querySelector('p').textContent = t('unable_reconnect');
     overlay.classList.add('active');
   });
 
   socket.on('connect_error', (err) => {
     clientLog('error', 'Socket connect error', { message: err.message });
-    setStatus('CONNECTION ERROR — retrying...');
+    setStatus(t('connection_error'));
   });
 
   // Unlock audio on first tap/click (required by iOS Safari)
@@ -270,6 +279,38 @@
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
       osc.start();
       osc.stop(ctx.currentTime + duration);
+    } catch (e) {}
+  }
+
+  function playLaunchSound(duration) {
+    try {
+      const ctx = getAudioCtx();
+      if (!ctx) return;
+      // Ascending power-up tone — confident, not alarming
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(120, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(600, ctx.currentTime + duration);
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.setValueAtTime(0.15, ctx.currentTime + duration - 0.1);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+      osc.start();
+      osc.stop(ctx.currentTime + duration);
+
+      // Subtle rumble underneath
+      const rumble = ctx.createOscillator();
+      const rGain = ctx.createGain();
+      rumble.connect(rGain);
+      rGain.connect(ctx.destination);
+      rumble.type = 'sine';
+      rumble.frequency.setValueAtTime(40, ctx.currentTime);
+      rGain.gain.setValueAtTime(0.1, ctx.currentTime);
+      rGain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+      rumble.start();
+      rumble.stop(ctx.currentTime + duration);
     } catch (e) {}
   }
 
@@ -484,6 +525,46 @@
     } catch (e) {}
   }
 
+  function playIncomingHitSound() {
+    try {
+      const ctx = getAudioCtx();
+      if (!ctx) return;
+      const tt = ctx.currentTime;
+      // Metal impact — short, sharp clang
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(400, tt);
+      osc.frequency.exponentialRampToValueAtTime(120, tt + 0.2);
+      gain.gain.setValueAtTime(0.25, tt);
+      gain.gain.exponentialRampToValueAtTime(0.001, tt + 0.3);
+      osc.start(tt);
+      osc.stop(tt + 0.3);
+    } catch (e) {}
+  }
+
+  function playIncomingMissSound() {
+    try {
+      const ctx = getAudioCtx();
+      if (!ctx) return;
+      const tt = ctx.currentTime;
+      // Soft water plop nearby
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(200, tt);
+      osc.frequency.exponentialRampToValueAtTime(60, tt + 0.15);
+      gain.gain.setValueAtTime(0.1, tt);
+      gain.gain.exponentialRampToValueAtTime(0.001, tt + 0.2);
+      osc.start(tt);
+      osc.stop(tt + 0.2);
+    } catch (e) {}
+  }
+
   // ── Visual effects ──
 
   function spawnParticles(cell, count, colors) {
@@ -553,13 +634,20 @@
         const label = document.getElementById('countdown-label');
         const number = document.getElementById('countdown-number');
         const sub = document.getElementById('countdown-sub');
+        const icon = document.getElementById('countdown-icon');
 
-        label.textContent = isAttacker ? 'LAUNCHING NUCLEAR STRIKE' : 'NUCLEAR STRIKE INCOMING';
-        sub.textContent = isAttacker ? 'WARHEAD ARMED' : 'SEEK SHELTER IMMEDIATELY';
+        label.textContent = isAttacker ? t('nuke_launching') : t('nuke_incoming');
+        sub.textContent = isAttacker ? t('warhead_armed') : t('seek_shelter');
 
+        // Toggle launch vs incoming visual mode
+        overlay.classList.toggle('launch-mode', isAttacker);
         overlay.classList.add('active');
 
-        playSirenSound(2);
+        if (isAttacker) {
+          playLaunchSound(2);
+        } else {
+          playSirenSound(2);
+        }
 
         let count = 2;
         number.textContent = count;
@@ -572,7 +660,7 @@
             playDoomCountdown();
           } else {
             clearInterval(interval);
-            overlay.classList.remove('active');
+            overlay.classList.remove('active', 'launch-mode');
             resolve();
           }
         }, 1000);
@@ -620,6 +708,7 @@
   let config = null;
   let roomId = null;
   let phase = 'lobby';
+  let vsComputer = false;
 
   // Placement state
   let shipPlacements = [];
@@ -628,6 +717,7 @@
   let placementGrid = [];
   let pendingPreview = null;  // { r, c, orient } — locked preview for touch placement
   let lastInputWasTouch = false;
+  let touchConfirming = false;  // true when second tap lands on locked preview
 
   // Battle state
   let selectedWeapon = 'missile';
@@ -637,6 +727,9 @@
   let myTurn = false;
   let sunkEnemyShips = [];
   let processingShot = false;
+
+  // Game stats
+  let stats = { shotsFired: 0, hits: 0, misses: 0, nukesUsed: 0, turnsPlayed: 0 };
 
   // Turn timer
   let turnTimerInterval = null;
@@ -667,16 +760,28 @@
 
   const $turnTimer = document.getElementById('turn-timer');
 
+  const TURN_TIME_LIMIT = 30; // seconds
+
   function startTurnTimer() {
     stopTurnTimer();
     turnStartTime = Date.now();
-    $turnTimer.textContent = '0:00';
+    updateTimerDisplay();
     turnTimerInterval = setInterval(() => {
       const elapsed = Math.floor((Date.now() - turnStartTime) / 1000);
-      const mins = Math.floor(elapsed / 60);
-      const secs = elapsed % 60;
-      $turnTimer.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
+      const remaining = TURN_TIME_LIMIT - elapsed;
+      updateTimerDisplay();
+      // Auto-fire when time runs out on your turn
+      if (myTurn && remaining <= 0 && !processingShot) {
+        fireRandomCell();
+      }
     }, 1000);
+  }
+
+  function updateTimerDisplay() {
+    const elapsed = Math.floor((Date.now() - turnStartTime) / 1000);
+    const remaining = Math.max(0, TURN_TIME_LIMIT - elapsed);
+    $turnTimer.textContent = `${remaining}s`;
+    $turnTimer.classList.toggle('timer-urgent', remaining <= 10 && myTurn);
   }
 
   function stopTurnTimer() {
@@ -685,6 +790,25 @@
       turnTimerInterval = null;
     }
     $turnTimer.textContent = '';
+    $turnTimer.classList.remove('timer-urgent');
+  }
+
+  function fireRandomCell() {
+    if (!myTurn || processingShot || !attackGrid.length) return;
+    // Collect all untargeted cells
+    const available = [];
+    for (let r = 0; r < config.GRID_SIZE; r++) {
+      for (let c = 0; c < config.GRID_SIZE; c++) {
+        const cell = attackGrid[r][c];
+        if (!cell.classList.contains('hit') && !cell.classList.contains('miss')) {
+          available.push({ r, c });
+        }
+      }
+    }
+    if (available.length === 0) return;
+    const target = available[Math.floor(Math.random() * available.length)];
+    toast(t('time_up_auto'), 'error');
+    socket.emit('fire', { r: target.r, c: target.c, weapon: 'missile' });
   }
 
   function buildGrid(container, size, onClick) {
@@ -747,15 +871,174 @@
     }
   }
 
+  // ── Language toggle ──
+
+  const $langBtn = document.getElementById('lang-btn');
+
+  function updateLangButton() {
+    $langBtn.textContent = I18n.getLang().toUpperCase();
+  }
+
+  $langBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const newLang = I18n.getLang() === 'en' ? 'es' : 'en';
+    I18n.setLang(newLang);
+  });
+
+  // Re-translate dynamic text when language changes
+  window.addEventListener('langchange', () => {
+    updateLangButton();
+    updateMuteUI();
+    refreshDynamicText();
+  });
+
+  function refreshDynamicText() {
+    // Refresh status text based on current phase
+    if (phase === 'lobby') {
+      // Don't overwrite connection-specific statuses
+    } else if (phase === 'placement') {
+      updatePlacementLabel();
+      if (document.getElementById('confirm-placement').style.display === 'none' &&
+          currentShipIdx >= (config ? config.SHIPS.length : 5)) {
+        // Waiting for opponent
+      }
+    } else if (phase === 'battle') {
+      if (myTurn) {
+        setStatus(t('your_turn_fire'), true);
+      } else {
+        setStatus(vsComputer ? t('computer_turn') : t('opponent_turn'));
+      }
+      renderShipStatus(true);
+    }
+
+    // Refresh room info
+    if (roomId && vsComputer) {
+      $roomInfo.innerHTML = `<strong>${t('vs_computer_label')}</strong>`;
+    } else if (roomId) {
+      $roomInfo.innerHTML = `Room: <strong>${roomId}</strong>`;
+    }
+
+    // Refresh waiting dots if active
+    if (waitingDotsInterval) {
+      stopWaitingDots();
+      startWaitingDots();
+    }
+
+    // Refresh nuke info on waiting panel
+    if (config && document.getElementById('panel-waiting').style.display !== 'none') {
+      document.getElementById('waiting-nuke-info').textContent =
+        myNukes > 0 ? t('nukes_per_player_info', { count: myNukes }) : t('nukes_disabled');
+    }
+
+    // Refresh rotate button text
+    if (phase === 'placement') {
+      document.getElementById('rotate-btn').textContent =
+        orientation === 'h' ? t('rotate') : (orientation === 'v' ? t('rotate') : t('rotate'));
+    }
+  }
+
   // ── Lobby ──
 
+  let waitingDotsInterval;
+
+  // Panel switching within the lobby terminal box
+  function showPanel(panelId) {
+    document.querySelectorAll('.terminal-panel').forEach(p => p.style.display = 'none');
+    document.getElementById(panelId).style.display = '';
+  }
+
+  // Auto-join from URL parameter
   const params = new URLSearchParams(window.location.search);
   const urlRoom = params.get('room');
   if (urlRoom) {
-    document.getElementById('room-input').value = urlRoom;
     joinRoom(urlRoom);
   }
 
+  // Main → New Game panel
+  document.getElementById('new-game-btn').addEventListener('click', () => {
+    showPanel('panel-new-game');
+  });
+
+  // Main → Join panel
+  document.getElementById('join-screen-btn').addEventListener('click', () => {
+    showPanel('panel-join');
+  });
+
+  // Track whether the next game is vs AI
+  let pendingVsAI = false;
+
+  // New Game → choose VS Player → settings
+  document.getElementById('choose-player-btn').addEventListener('click', () => {
+    pendingVsAI = false;
+    document.getElementById('difficulty-row').style.display = 'none';
+    showPanel('panel-game-settings');
+  });
+
+  // New Game → choose VS Computer → settings
+  document.getElementById('choose-ai-btn').addEventListener('click', () => {
+    pendingVsAI = true;
+    document.getElementById('difficulty-row').style.display = '';
+    showPanel('panel-game-settings');
+  });
+
+  // Settings → Start Game
+  document.getElementById('start-game-btn').addEventListener('click', () => {
+    const raw = document.getElementById('nuke-input').value.trim();
+    const nukes = raw === '' ? 2 : (parseInt(raw) || 0);
+    if (pendingVsAI) {
+      const diffBtn = document.querySelector('.diff-btn.selected');
+      const difficulty = diffBtn ? diffBtn.dataset.diff : 'normal';
+      socket.emit('join_ai_game', { nukes, difficulty });
+    } else {
+      const code = Math.random().toString(36).substring(2, 10);
+      joinRoom(code, nukes);
+    }
+  });
+
+  // Nuke stepper +/- buttons
+  document.getElementById('nuke-minus').addEventListener('click', () => {
+    const input = document.getElementById('nuke-input');
+    const current = input.value.trim() === '' ? 2 : (parseInt(input.value) || 0);
+    input.value = Math.max(0, current - 1);
+  });
+
+  document.getElementById('nuke-plus').addEventListener('click', () => {
+    const input = document.getElementById('nuke-input');
+    const current = input.value.trim() === '' ? 2 : (parseInt(input.value) || 0);
+    input.value = Math.min(10, current + 1);
+  });
+
+  // Nuke input: only allow digits, clamp on blur
+  document.getElementById('nuke-input').addEventListener('input', (e) => {
+    e.target.value = e.target.value.replace(/[^0-9]/g, '');
+  });
+
+  document.getElementById('nuke-input').addEventListener('blur', (e) => {
+    const val = parseInt(e.target.value);
+    if (!isNaN(val)) {
+      e.target.value = Math.max(0, Math.min(10, val));
+    }
+  });
+
+  // Difficulty toggle
+  document.querySelectorAll('.diff-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+    });
+  });
+
+  // New Game → back
+  document.getElementById('new-game-back-btn').addEventListener('click', () => {
+    showPanel('panel-main');
+  });
+
+  // Settings → back
+  document.getElementById('settings-back-btn').addEventListener('click', () => {
+    showPanel('panel-new-game');
+  });
+
+  // Join → join room
   document.getElementById('join-btn').addEventListener('click', () => {
     const code = document.getElementById('room-input').value.trim();
     if (code) joinRoom(code);
@@ -768,11 +1051,25 @@
     }
   });
 
-  document.getElementById('create-btn').addEventListener('click', () => {
-    const code = Math.random().toString(36).substring(2, 10);
-    document.getElementById('room-input').value = code;
-    const nukes = parseInt(document.getElementById('nuke-input').value) || 2;
-    joinRoom(code, nukes);
+  // Join → back
+  document.getElementById('join-back-btn').addEventListener('click', () => {
+    showPanel('panel-main');
+  });
+
+  // Waiting → copy invite link
+  document.getElementById('copy-link-btn').addEventListener('click', () => {
+    const shareUrl = `${location.origin}${basePath}/?room=${roomId}`;
+    navigator.clipboard.writeText(shareUrl).then(() => {
+      toast(t('invite_copied'));
+    });
+  });
+
+  // Waiting → leave
+  document.getElementById('waiting-back-btn').addEventListener('click', () => {
+    stopWaitingDots();
+    socket.disconnect();
+    window.history.replaceState({}, '', basePath || '/');
+    location.reload();
   });
 
   function joinRoom(code, nukes) {
@@ -781,6 +1078,22 @@
     } else {
       socket.emit('join_room', code);
     }
+  }
+
+  function startWaitingDots() {
+    const el = document.getElementById('waiting-dots');
+    if (!el) return;
+    let count = 0;
+    const baseText = t('waiting_for_opponent');
+    clearInterval(waitingDotsInterval);
+    waitingDotsInterval = setInterval(() => {
+      count = (count + 1) % 4;
+      el.textContent = baseText + '.'.repeat(count);
+    }, 500);
+  }
+
+  function stopWaitingDots() {
+    clearInterval(waitingDotsInterval);
   }
 
   // ── Menu ──
@@ -813,10 +1126,22 @@
     location.reload();
   });
 
+  document.getElementById('menu-forfeit').addEventListener('click', () => {
+    $menuDropdown.classList.remove('open');
+    if (phase === 'battle') {
+      socket.emit('forfeit');
+    }
+  });
+
   document.getElementById('menu-quit').addEventListener('click', () => {
     $menuDropdown.classList.remove('open');
     socket.disconnect();
     window.history.replaceState({}, '', basePath || '/');
+    location.reload();
+  });
+
+  // Leave button on game over
+  document.getElementById('leave-btn').addEventListener('click', () => {
     location.reload();
   });
 
@@ -827,23 +1152,36 @@
     config = data.config;
     roomId = data.roomId;
     myNukes = config.NUKES_PER_PLAYER;
+    vsComputer = !!data.isAI;
 
     _logPlayerIdx = playerIdx;
     _logRoomId = roomId;
-    clientLog('info', 'Joined room', { playerIdx, roomId });
+    clientLog('info', 'Joined room', { playerIdx, roomId, vsComputer });
 
     window.history.replaceState({}, '', `${basePath}/?room=${roomId}`);
 
-    const shareUrl = `${location.origin}${basePath}/?room=${roomId}`;
-    $roomInfo.innerHTML = `Room: <strong>${roomId}</strong> &mdash; <a href="${shareUrl}" onclick="navigator.clipboard.writeText('${shareUrl}');return false;">Copy invite link</a>`;
-
-    setStatus(`Player ${playerIdx + 1} — waiting for opponent...`);
-    showScreen('lobby');
+    if (vsComputer) {
+      $roomInfo.innerHTML = `<strong>${t('vs_computer_label')}</strong>`;
+      setStatus(t('place_fleet_commander'));
+      document.getElementById('reaction-bar').style.display = 'none';
+      // AI game — phase event fires immediately, no waiting room needed
+    } else {
+      $roomInfo.innerHTML = `Room: <strong>${roomId}</strong>`;
+      setStatus(t('player_waiting', { num: playerIdx + 1 }));
+      // Show waiting room
+      document.getElementById('room-code-display').textContent = roomId.toUpperCase();
+      document.getElementById('waiting-nuke-info').textContent =
+        myNukes > 0 ? t('nukes_per_player_info', { count: myNukes }) : t('nukes_disabled');
+      showPanel('panel-waiting');
+      startWaitingDots();
+    }
   });
 
   socket.on('phase', (newPhase) => {
     clientLog('info', `Phase changed: ${newPhase}`);
     phase = newPhase;
+
+    document.getElementById('menu-forfeit').style.display = (newPhase === 'battle') ? '' : 'none';
 
     if (phase === 'placement') {
       startPlacement();
@@ -853,14 +1191,16 @@
   });
 
   socket.on('opponent_joined', () => {
-    toast('Opponent has joined!');
+    stopWaitingDots();
+    toast(t('opponent_joined'));
   });
 
   socket.on('opponent_ready', () => {
-    toast('Opponent has placed their ships');
+    toast(t('opponent_placed_ships'));
   });
 
   socket.on('opponent_disconnected', () => {
+    if (vsComputer) return; // AI never disconnects
     clientLog('info', 'Opponent disconnected');
     document.getElementById('disconnect-overlay').classList.add('active');
   });
@@ -876,22 +1216,43 @@
     toast(msg, 'error');
   });
 
-  const REACTIONS = ['Nice shot!', 'Missed me!', 'Good game', '\u{1F525}', '\u{1F631}'];
+  socket.on('forfeit_result', ({ loserIdx, winnerIdx }) => {
+    phase = 'finished';
+    const won = winnerIdx === playerIdx;
+    if (!won) {
+      toast(t('you_forfeited'), 'error');
+    } else {
+      toast(vsComputer ? t('computer_forfeited') : t('opponent_forfeited'), 'sunk-toast');
+    }
+    showGameOver(won);
+  });
+
+  const REACTIONS_KEYS = ['reaction_nice_shot', 'reaction_missed_me', 'reaction_good_game', '\u{1F525}', '\u{1F631}'];
   socket.on('opponent_reaction', (reactionId) => {
-    const msg = REACTIONS[reactionId];
-    if (msg) toast(`Opponent: ${msg}`, 'reaction-toast');
+    const key = REACTIONS_KEYS[reactionId];
+    if (!key) return;
+    // Emoji reactions don't need translation
+    const msg = key.startsWith('reaction_') ? t(key) : key;
+    toast(t('opponent_reaction', { msg }), 'reaction-toast');
   });
 
   // ── Placement ──
 
   function startPlacement() {
     showScreen('placement-screen');
-    setStatus('Place your ships on the grid');
+    setStatus(t('place_ships_grid'));
     shipPlacements = [];
     currentShipIdx = 0;
     orientation = 'h';
     pendingPreview = null;
     lastInputWasTouch = false;
+    touchConfirming = false;
+
+    // Show mobile hint on touch devices
+    const hint = document.getElementById('mobile-hint');
+    if (hint && ('ontouchstart' in window || navigator.maxTouchPoints > 0)) {
+      hint.classList.add('show');
+    }
 
     const container = document.getElementById('placement-grid');
     placementGrid = buildGrid(container, config.GRID_SIZE, onPlacementClick);
@@ -908,11 +1269,25 @@
       lastInputWasTouch = true;
       const touch = e.touches[0];
       const el = document.elementFromPoint(touch.clientX, touch.clientY);
-      if (el && el.closest('.cell')) {
-        onPlacementHover({ target: el });
+      const cell = el && el.closest('.cell');
+      if (!cell) return;
+      const r = parseInt(cell.dataset.r);
+      const c = parseInt(cell.dataset.c);
+
+      // If tapping on an existing locked preview, don't clear it — let click confirm
+      if (pendingPreview) {
+        const prevSize = config.SHIPS[currentShipIdx].size;
+        const prevCells = getShipCells(pendingPreview.r, pendingPreview.c, prevSize, pendingPreview.orient);
+        if (prevCells.some(pc => pc.r === r && pc.c === c)) {
+          touchConfirming = true;
+          return;
+        }
       }
+      touchConfirming = false;
+      onPlacementHover({ target: el });
     }, { passive: true });
     container.addEventListener('touchmove', (e) => {
+      touchConfirming = false;
       const touch = e.touches[0];
       const el = document.elementFromPoint(touch.clientX, touch.clientY);
       if (el && el.closest('.cell')) {
@@ -921,6 +1296,7 @@
     }, { passive: true });
     // On touch end, lock the preview instead of clearing it
     container.addEventListener('touchend', () => {
+      if (touchConfirming) return; // let click handler confirm the placement
       lockPreview();
     });
   }
@@ -931,10 +1307,10 @@
 
     if (currentShipIdx < config.SHIPS.length) {
       const ship = config.SHIPS[currentShipIdx];
-      label.textContent = `Place: ${ship.name} (${ship.size})`;
+      label.textContent = t('place_ship', { name: shipName(ship.name), size: ship.size });
       confirmBtn.style.display = 'none';
     } else {
-      label.textContent = 'All ships placed!';
+      label.textContent = t('all_ships_placed');
       confirmBtn.style.display = '';
     }
   }
@@ -1027,7 +1403,7 @@
     const cells = getShipCells(r, c, size, orientation);
 
     if (!isValidPlacement(cells)) {
-      toast('Invalid placement', 'error');
+      toast(t('invalid_placement'), 'error');
       return;
     }
 
@@ -1100,24 +1476,18 @@
 
     if (lastInputWasTouch) {
       lastInputWasTouch = false;
-      // Touch: tap-to-preview, tap-again-to-confirm
-      if (pendingPreview && pendingPreview.r === r && pendingPreview.c === c && pendingPreview.orient === orientation) {
-        // Second tap on same cell + same orientation → place the ship
+
+      // Second tap on the locked preview → confirm placement
+      if (touchConfirming && pendingPreview) {
+        touchConfirming = false;
         clearPreview();
-        placeShipAt(r, c);
-      } else {
-        // First tap or different cell → show locked preview
-        clearPreview();
-        const size = config.SHIPS[currentShipIdx].size;
-        const cells = getShipCells(r, c, size, orientation);
-        const valid = isValidPlacement(cells);
-        for (const { r: cr, c: cc } of cells) {
-          if (cr >= 0 && cr < config.GRID_SIZE && cc >= 0 && cc < config.GRID_SIZE) {
-            placementGrid[cr][cc].classList.add(valid ? 'ship-preview-locked' : 'ship-preview-invalid');
-          }
-        }
-        pendingPreview = valid ? { r, c, orient: orientation } : null;
+        placeShipAt(pendingPreview.r, pendingPreview.c);
+        return;
       }
+      touchConfirming = false;
+
+      // Tapped outside preview → already handled by touchstart/touchend
+      // Just need to update pendingPreview from whatever lockPreview set
     } else {
       // Mouse: immediate placement (desktop behavior unchanged)
       placeShipAt(r, c);
@@ -1126,7 +1496,7 @@
 
   function rotateShip() {
     orientation = orientation === 'h' ? 'v' : 'h';
-    document.getElementById('rotate-btn').textContent = `Rotate (R) — ${orientation === 'h' ? 'Horizontal' : 'Vertical'}`;
+    document.getElementById('rotate-btn').textContent = orientation === 'h' ? t('rotate_horizontal') : t('rotate_vertical');
     // Re-render locked preview in new orientation
     if (pendingPreview) {
       clearPreview();
@@ -1156,12 +1526,12 @@
 
   document.getElementById('confirm-placement').addEventListener('click', () => {
     socket.emit('place_ships', shipPlacements);
-    setStatus('Waiting for opponent to place ships...');
+    setStatus(t('waiting_opponent_place'));
     document.getElementById('confirm-placement').style.display = 'none';
   });
 
   socket.on('ships_confirmed', () => {
-    toast('Ships confirmed!');
+    toast(t('ships_confirmed'));
   });
 
   // ── Battle ──
@@ -1233,19 +1603,57 @@
     }
   }
 
-  function renderShipStatus() {
+  function renderShipStatus(forceRebuild) {
     const container = document.getElementById('ship-status');
-    // First call: build the tags
-    if (!container.children.length) {
+    // First call or language change: build the tags
+    if (!container.children.length || forceRebuild) {
+      const prevSunk = [];
+      // Preserve sunk state when rebuilding
+      if (forceRebuild) {
+        for (const tag of container.children) {
+          if (tag.classList.contains('sunk')) prevSunk.push(tag.dataset.ship);
+        }
+      }
       container.innerHTML = config.SHIPS.map(s =>
-        `<span class="ship-tag" data-ship="${s.name}">${s.name}</span>`
+        `<span class="ship-tag${sunkEnemyShips.some(es => es.name === s.name) || prevSunk.includes(s.name) ? ' sunk' : ''}" data-ship="${s.name}">${shipName(s.name)}</span>`
       ).join('');
     }
     // Update: only add .sunk to newly sunk ships (never re-add, avoids re-triggering animation)
+    const sunkNames = sunkEnemyShips.map(s => s.name);
     for (const tag of container.children) {
       const name = tag.dataset.ship;
-      if (sunkEnemyShips.includes(name) && !tag.classList.contains('sunk')) {
+      if (sunkNames.includes(name) && !tag.classList.contains('sunk')) {
         tag.classList.add('sunk');
+      }
+    }
+  }
+
+  function renderSunkShipOutline(ship) {
+    if (!attackGrid.length || !ship.cells || ship.cells.length === 0) return;
+    const cells = ship.cells;
+
+    // Determine orientation from the cells
+    const orient = (cells.length === 1) ? 'h'
+      : (cells[0].r === cells[1].r) ? 'h' : 'v';
+
+    // Sort cells by position to ensure correct bow→stern order
+    const sorted = [...cells].sort((a, b) =>
+      orient === 'h' ? a.c - b.c : a.r - b.r
+    );
+
+    for (let i = 0; i < sorted.length; i++) {
+      const { r, c } = sorted[i];
+      if (r >= 0 && r < config.GRID_SIZE && c >= 0 && c < config.GRID_SIZE) {
+        const cell = attackGrid[r][c];
+        cell.classList.add('sunk-ship');
+        cell.dataset.sunkOrient = orient;
+        if (i === 0) {
+          cell.dataset.sunkPart = 'bow';
+        } else if (i === sorted.length - 1) {
+          cell.dataset.sunkPart = 'stern';
+        } else {
+          cell.dataset.sunkPart = 'mid';
+        }
       }
     }
   }
@@ -1282,14 +1690,14 @@
 
   function onAttackClick(r, c) {
     if (!myTurn || processingShot) {
-      if (!myTurn) toast('Not your turn', 'error');
+      if (!myTurn) toast(t('not_your_turn'), 'error');
       clientLog('info', 'Click blocked', { myTurn, processingShot, r, c });
       return;
     }
 
     const cell = attackGrid[r][c];
     if (cell.classList.contains('hit') || cell.classList.contains('miss')) {
-      toast('Already targeted — choose new coordinates', 'error');
+      toast(t('already_targeted'), 'error');
       return;
     }
 
@@ -1304,7 +1712,7 @@
     updateTurnIndicator();
     startTurnTimer();
     if (!processingShot) {
-      setStatus(myTurn ? 'Your turn — fire!' : "Opponent's turn...", myTurn);
+      setStatus(myTurn ? t('your_turn_fire') : (vsComputer ? t('computer_turn') : t('opponent_turn')), myTurn);
     }
   });
 
@@ -1349,7 +1757,7 @@
     processingShot = false;
     updateClickableCells();
     updateTurnIndicator();
-    setStatus(myTurn ? 'Your turn — fire!' : "Opponent's turn...", myTurn);
+    setStatus(myTurn ? t('your_turn_fire') : (vsComputer ? t('computer_turn') : t('opponent_turn')), myTurn);
     processNextShot();
   }
 
@@ -1392,19 +1800,32 @@
 
     $rematchStatus.textContent = '';
     $rematchBtn.disabled = false;
-    $rematchBtn.textContent = 'REMATCH';
+    $rematchBtn.textContent = t('rematch');
 
     if (won) {
-      $title.textContent = 'Victory!';
-      $msg.textContent = 'You destroyed the enemy fleet.';
+      $title.textContent = t('victory');
+      $msg.textContent = t('victory_msg');
       $gameOver.classList.remove('loser');
       playVictorySound();
     } else {
-      $title.textContent = 'Defeat';
-      $msg.textContent = 'Your fleet has been destroyed.';
+      $title.textContent = t('defeat');
+      $msg.textContent = t('defeat_msg');
       $gameOver.classList.add('loser');
       playDefeatSound();
     }
+
+    // Render stats
+    const accuracy = stats.shotsFired > 0 ? Math.round((stats.hits / (stats.hits + stats.misses)) * 100) : 0;
+    const $stats = document.getElementById('game-over-stats');
+    $stats.innerHTML = `
+      <div class="stat"><span class="stat-val">${accuracy}%</span><span class="stat-label">${t('accuracy')}</span></div>
+      <div class="stat"><span class="stat-val">${stats.shotsFired}</span><span class="stat-label">${t('shots_fired')}</span></div>
+      <div class="stat"><span class="stat-val">${stats.hits}</span><span class="stat-label">${t('hits')}</span></div>
+      <div class="stat"><span class="stat-val">${sunkEnemyShips.length}/${config.SHIPS.length}</span><span class="stat-label">${t('ships_sunk')}</span></div>
+      <div class="stat"><span class="stat-val">${stats.nukesUsed}</span><span class="stat-label">${t('nukes_used')}</span></div>
+      <div class="stat"><span class="stat-val">${stats.turnsPlayed}</span><span class="stat-label">${t('total_turns')}</span></div>
+    `;
+
     $gameOver.classList.add('active');
   }
 
@@ -1413,20 +1834,21 @@
   document.getElementById('rematch-btn').addEventListener('click', () => {
     const btn = document.getElementById('rematch-btn');
     btn.disabled = true;
-    btn.textContent = 'WAITING...';
-    document.getElementById('rematch-status').textContent = 'WAITING FOR OPPONENT...';
+    btn.textContent = t('waiting_ellipsis');
+    document.getElementById('rematch-status').textContent = vsComputer ? '' : t('waiting_for_opponent_ellipsis');
     clientLog('info', 'Requesting rematch');
     socket.emit('request_rematch');
   });
 
   socket.on('opponent_wants_rematch', () => {
-    document.getElementById('rematch-status').textContent = 'OPPONENT WANTS A REMATCH';
+    document.getElementById('rematch-status').textContent = t('opponent_wants_rematch');
   });
 
   socket.on('rematch_start', (data) => {
     clientLog('info', 'Rematch starting');
     stopTurnTimer();
     // Reset client state
+    if (data.isAI) vsComputer = true;
     config = data.config;
     myNukes = config.NUKES_PER_PLAYER;
     shipPlacements = [];
@@ -1439,6 +1861,7 @@
     myTurn = false;
     sunkEnemyShips = [];
     processingShot = false;
+    stats = { shotsFired: 0, hits: 0, misses: 0, nukesUsed: 0, turnsPlayed: 0 };
 
     // Clear battle log
     const logEntries = document.getElementById('log-entries');
@@ -1478,11 +1901,11 @@
       const hits = results.filter(r => r.result === 'hit').length;
       const misses = results.filter(r => r.result === 'miss').length;
       if (isMyShot) {
-        toast(`Nuclear blast dealt ${hits} hit${hits !== 1 ? 's' : ''}!`, 'nuke-toast');
-        addLogEntry(`NUKE: ${hits} hits, ${misses} misses`, 'log-nuke');
+        toast(t('nuke_blast_hits', { hits, s: hits !== 1 ? 's' : '' }), 'nuke-toast');
+        addLogEntry(t('nuke_log', { hits, misses }), 'log-nuke');
       } else {
-        toast('Incoming nuclear strike!', 'nuke-toast');
-        addLogEntry(`ENEMY NUKE: ${hits} hits on your fleet`, 'log-nuke');
+        toast(t('incoming_nuke_strike'), 'nuke-toast');
+        addLogEntry(t('enemy_nuke_log', { hits }), 'log-nuke');
       }
 
     } else {
@@ -1492,38 +1915,49 @@
       await animateMissile(targetGrid[r][c]);
       applyCellResult(r, c, result, isMyShot, false);
 
+      const coord = `${String.fromCharCode(65 + c)}${r + 1}`;
       if (result === 'hit') {
         shake(false);
         if (isMyShot) {
-          toast('Direct Hit!', 'hit');
-          addLogEntry(`Hit at ${String.fromCharCode(65 + c)}${r + 1}`, 'log-hit');
+          toast(t('direct_hit'), 'hit');
+          addLogEntry(t('hit_at', { coord }), 'log-hit');
         } else {
-          toast('Your ship was hit!', 'hit');
-          addLogEntry(`Enemy hit at ${String.fromCharCode(65 + c)}${r + 1}`, 'log-hit');
+          toast(t('ship_was_hit'), 'hit');
+          addLogEntry(t('enemy_hit_at', { coord }), 'log-hit');
         }
       } else {
         if (isMyShot) {
-          toast('Miss — splash!', 'miss-toast');
-          addLogEntry(`Miss at ${String.fromCharCode(65 + c)}${r + 1}`, 'log-miss');
+          toast(t('miss_splash'), 'miss-toast');
+          addLogEntry(t('miss_at', { coord }), 'log-miss');
         } else {
-          toast('Enemy missed!', 'miss-toast');
-          addLogEntry(`Enemy miss at ${String.fromCharCode(65 + c)}${r + 1}`, 'log-miss');
+          toast(t('enemy_missed'), 'miss-toast');
+          addLogEntry(t('enemy_miss_at', { coord }), 'log-miss');
         }
       }
     }
 
+    // Track stats
+    if (isMyShot) {
+      stats.shotsFired++;
+      stats.hits += results.filter(r => r.result === 'hit').length;
+      stats.misses += results.filter(r => r.result === 'miss').length;
+      if (weapon === 'nuke') stats.nukesUsed++;
+    }
+    stats.turnsPlayed++;
+
     // Track sunk ships
     if (isMyShot && sunkShips) {
-      const previousSunk = [...sunkEnemyShips];
+      const previousNames = sunkEnemyShips.map(s => s.name);
       sunkEnemyShips = sunkShips;
       renderShipStatus();
-      const newlySunk = sunkShips.filter(s => !previousSunk.includes(s));
-      for (const name of newlySunk) {
+      const newlySunk = sunkShips.filter(s => !previousNames.includes(s.name));
+      for (const ship of newlySunk) {
+        renderSunkShipOutline(ship);
         if (!gameOver) {
           playSunkSound();
           await new Promise(resolve => setTimeout(resolve, 400));
-          toast(`You sunk their ${name}!`, 'sunk-toast');
-          addLogEntry(`SUNK: ${name}`, 'log-sunk');
+          toast(t('you_sunk_ship', { name: shipName(ship.name) }), 'sunk-toast');
+          addLogEntry(t('sunk_log', { name: shipName(ship.name) }), 'log-sunk');
         }
       }
     }
@@ -1583,10 +2017,18 @@
       }
     } else {
       if (result === 'hit') {
+        playIncomingHitSound();
         if (isNuke) spawnNukeParticles(cell); else spawnHitParticles(cell);
       } else {
+        playIncomingMissSound();
         addSplashRing(cell);
       }
     }
   }
+
+  // ── Initialize i18n ──
+  I18n.init().then(() => {
+    updateLangButton();
+    updateMuteUI();
+  });
 })();

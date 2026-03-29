@@ -3,7 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
-  <title>Battleship — Tactical Command</title>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#040e1a">
+  <link rel="manifest" href="manifest.json">
+  <title>Naval Command</title>
   <link rel="preload" href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" as="style">
   <link rel="stylesheet" href="style.css">
 </head>
@@ -11,20 +16,24 @@
   <!-- CRT scanline overlay -->
   <div id="crt-overlay"></div>
 
+  <!-- Language toggle -->
+  <button id="lang-btn" aria-label="Switch language">EN</button>
+
   <!-- Menu button -->
   <button id="menu-btn" aria-label="Menu">&#9776;</button>
   <div id="menu-dropdown">
-    <button id="menu-mute" class="menu-item">&#9834; MUTE SOUNDS</button>
-    <button id="menu-new-game" class="menu-item">&#9654; NEW GAME</button>
-    <button id="menu-quit" class="menu-item">&#9747; QUIT</button>
+    <button id="menu-mute" class="menu-item" data-i18n="mute_sounds">&#9834; MUTE SOUNDS</button>
+    <button id="menu-forfeit" class="menu-item" style="display:none;" data-i18n="forfeit">&#9873; FORFEIT</button>
+    <button id="menu-new-game" class="menu-item" data-i18n="new_game_menu">&#9654; NEW GAME</button>
+    <button id="menu-quit" class="menu-item" data-i18n="quit">&#9747; QUIT</button>
   </div>
 
   <h1>
     <span class="title-icon">&#9178;</span>
-    NAVAL COMMAND
+    <span data-i18n="title">NAVAL COMMAND</span>
     <span class="title-icon">&#9178;</span>
   </h1>
-  <div id="status-row"><span id="status">AWAITING CONNECTION...</span><span id="turn-timer"></span></div>
+  <div id="status-row"><span id="status" data-i18n="awaiting_connection">AWAITING CONNECTION...</span><span id="turn-timer"></span></div>
   <div id="room-info"></div>
 
   <!-- Lobby screen -->
@@ -165,19 +174,67 @@
         <!-- Waterline reflection -->
         <line class="fleet-waterline" x1="10" y1="72" x2="390" y2="72"/>
       </svg>
-      <div class="fleet-scan-text">FLEET STATUS: COMBAT READY</div>
+      <div class="fleet-scan-text" data-i18n="fleet_status">FLEET STATUS: COMBAT READY</div>
     </div>
 
-    <div class="terminal-box">
-      <div class="terminal-label">ENTER TACTICAL CHANNEL</div>
-      <input type="text" id="room-input" placeholder="ROOM CODE" spellcheck="false">
-      <button id="join-btn" class="cmd-btn">JOIN CHANNEL</button>
-      <span class="or">// OR //</span>
-      <div class="nuke-setting">
-        <label for="nuke-input">NUKES PER PLAYER</label>
-        <input type="number" id="nuke-input" value="2" min="0" max="10">
+    <div class="terminal-box" id="terminal-box">
+      <!-- Panel: Main menu -->
+      <div class="terminal-panel" id="panel-main">
+        <div class="terminal-label" data-i18n="command_center">COMMAND CENTER</div>
+        <button id="new-game-btn" class="cmd-btn primary" data-i18n="new_game">NEW GAME</button>
+        <button id="join-screen-btn" class="cmd-btn" data-i18n="join_room">JOIN ROOM</button>
       </div>
-      <button id="create-btn" class="cmd-btn primary">CREATE NEW ROOM</button>
+
+      <!-- Panel: New Game (choose opponent) -->
+      <div class="terminal-panel" id="panel-new-game" style="display:none">
+        <div class="terminal-label" data-i18n="new_game_label">NEW GAME</div>
+        <button id="choose-player-btn" class="cmd-btn primary" data-i18n="vs_player">VS PLAYER</button>
+        <button id="choose-ai-btn" class="cmd-btn ai-btn" data-i18n="vs_computer">VS COMPUTER</button>
+        <button id="new-game-back-btn" class="cmd-btn" data-i18n="back">BACK</button>
+      </div>
+
+      <!-- Panel: Game Settings (nukes + difficulty) -->
+      <div class="terminal-panel" id="panel-game-settings" style="display:none">
+        <div class="terminal-label" data-i18n="game_settings">GAME SETTINGS</div>
+        <div class="nuke-setting">
+          <label data-i18n="nukes_per_player">NUKES PER PLAYER</label>
+          <div class="nuke-stepper">
+            <button class="stepper-btn" id="nuke-minus">-</button>
+            <input type="text" id="nuke-input" value="" placeholder="2" inputmode="numeric">
+            <button class="stepper-btn" id="nuke-plus">+</button>
+          </div>
+        </div>
+        <div class="difficulty-setting" id="difficulty-row" style="display:none">
+          <label data-i18n="difficulty">DIFFICULTY</label>
+          <div class="difficulty-toggle">
+            <button class="diff-btn selected" data-diff="normal" data-i18n="normal">NORMAL</button>
+            <button class="diff-btn" data-diff="hard" data-i18n="hard">HARD</button>
+          </div>
+        </div>
+        <button id="start-game-btn" class="cmd-btn primary" data-i18n="start_game">START GAME</button>
+        <button id="settings-back-btn" class="cmd-btn" data-i18n="back">BACK</button>
+      </div>
+
+      <!-- Panel: Join Room -->
+      <div class="terminal-panel" id="panel-join" style="display:none">
+        <div class="terminal-label" data-i18n="join_existing_room">JOIN EXISTING ROOM</div>
+        <input type="text" id="room-input" data-i18n-placeholder="enter_room_code" placeholder="ENTER ROOM CODE" spellcheck="false">
+        <button id="join-btn" class="cmd-btn primary" data-i18n="join_room">JOIN ROOM</button>
+        <button id="join-back-btn" class="cmd-btn" data-i18n="back">BACK</button>
+      </div>
+
+      <!-- Panel: Waiting Room -->
+      <div class="terminal-panel" id="panel-waiting" style="display:none">
+        <div class="terminal-label" data-i18n="room_established">ROOM ESTABLISHED</div>
+        <div class="room-code-display" id="room-code-display">--------</div>
+        <div class="room-code-hint" data-i18n="share_code">SHARE THIS CODE WITH YOUR OPPONENT</div>
+        <button id="copy-link-btn" class="cmd-btn" data-i18n="copy_invite_link">COPY INVITE LINK</button>
+        <div class="waiting-indicator">
+          <span class="waiting-dots" id="waiting-dots" data-i18n="waiting_for_opponent">WAITING FOR OPPONENT</span>
+        </div>
+        <div class="nuke-info" id="waiting-nuke-info"></div>
+        <button id="waiting-back-btn" class="cmd-btn" data-i18n="leave_room">LEAVE ROOM</button>
+      </div>
     </div>
   </div>
 
@@ -185,14 +242,14 @@
   <div id="placement-screen" class="screen">
     <div id="placement-controls">
       <span class="ship-label" id="current-ship-label">DEPLOY: CARRIER (5)</span>
-      <button id="rotate-btn" class="cmd-btn">ROTATE (R)</button>
-      <button id="undo-btn" class="cmd-btn" style="display:none;">UNDO (Z)</button>
-      <button id="random-btn" class="cmd-btn">RANDOM (Q)</button>
-      <button id="confirm-placement" class="cmd-btn primary" style="display:none;">CONFIRM DEPLOYMENT</button>
+      <button id="rotate-btn" class="cmd-btn" data-i18n="rotate">ROTATE (R)</button>
+      <button id="undo-btn" class="cmd-btn" style="display:none;" data-i18n="undo">UNDO (Z)</button>
+      <button id="random-btn" class="cmd-btn" data-i18n="random">RANDOM (Q)</button>
+      <button id="confirm-placement" class="cmd-btn primary" style="display:none;" data-i18n="confirm_deployment">CONFIRM DEPLOYMENT</button>
     </div>
     <div class="grid-wrapper">
       <div class="grid-container">
-        <h2>YOUR FLEET</h2>
+        <h2 data-i18n="your_fleet">YOUR FLEET</h2>
         <div class="grid-frame">
           <div class="grid" id="placement-grid"></div>
           <div class="radar-sweep"></div>
@@ -201,6 +258,7 @@
         <div class="coord-row" id="placement-coords-col"></div>
       </div>
     </div>
+    <div class="mobile-hint" id="mobile-hint" data-i18n="mobile_hint">TAP or SLIDE to preview placement &bull; TAP again to confirm &bull; ROTATE to change direction</div>
   </div>
 
   <!-- Battle screen -->
@@ -208,25 +266,25 @@
     <div id="weapon-bar">
       <button class="weapon-btn selected" data-weapon="missile" id="missile-btn">
         <span class="weapon-icon">&#9681;</span>
-        <span class="weapon-label">STANDARD<br>MISSILE</span>
+        <span class="weapon-label" data-i18n-html="standard_missile">STANDARD<br>MISSILE</span>
       </button>
       <button class="weapon-btn nuke" data-weapon="nuke" id="nuke-btn">
         <span class="weapon-icon">&#9762;</span>
-        <span class="weapon-label">NUCLEAR<br>STRIKE</span>
+        <span class="weapon-label" data-i18n-html="nuclear_strike">NUCLEAR<br>STRIKE</span>
         <span class="count" id="nuke-count">2</span>
       </button>
     </div>
     <div id="reaction-bar">
-      <button class="reaction-btn" data-reaction="0">Nice shot!</button>
-      <button class="reaction-btn" data-reaction="1">Missed me!</button>
-      <button class="reaction-btn" data-reaction="2">Good game</button>
+      <button class="reaction-btn" data-reaction="0" data-i18n="reaction_nice_shot">Nice shot!</button>
+      <button class="reaction-btn" data-reaction="1" data-i18n="reaction_missed_me">Missed me!</button>
+      <button class="reaction-btn" data-reaction="2" data-i18n="reaction_good_game">Good game</button>
       <button class="reaction-btn" data-reaction="3">&#128293;</button>
       <button class="reaction-btn" data-reaction="4">&#128561;</button>
     </div>
     <div id="ship-status"></div>
     <div id="game-area">
       <div class="grid-container">
-        <h2>ENEMY WATERS</h2>
+        <h2 data-i18n="enemy_waters">ENEMY WATERS</h2>
         <div class="grid-frame attack-frame">
           <div class="grid" id="attack-grid"></div>
           <div class="radar-sweep"></div>
@@ -234,7 +292,7 @@
         </div>
       </div>
       <div class="grid-container">
-        <h2>YOUR FLEET</h2>
+        <h2 data-i18n="your_fleet">YOUR FLEET</h2>
         <div class="grid-frame defense-frame">
           <div class="grid" id="defense-grid"></div>
           <div class="grid-scanlines"></div>
@@ -245,7 +303,7 @@
 
   <!-- Battle log -->
   <div id="battle-log" style="display:none;">
-    <h3>// BATTLE LOG</h3>
+    <h3 data-i18n="battle_log">// BATTLE LOG</h3>
     <div id="log-entries"></div>
   </div>
 
@@ -253,9 +311,9 @@
   <div id="nuke-countdown">
     <div class="siren-bar top"></div>
     <div class="countdown-icon" id="countdown-icon">&#9762;</div>
-    <div class="countdown-text" id="countdown-label">NUCLEAR STRIKE INCOMING</div>
+    <div class="countdown-text" id="countdown-label" data-i18n="nuke_incoming">NUCLEAR STRIKE INCOMING</div>
     <div class="countdown-number" id="countdown-number">3</div>
-    <div class="countdown-sub" id="countdown-sub">SEEK SHELTER IMMEDIATELY</div>
+    <div class="countdown-sub" id="countdown-sub" data-i18n="seek_shelter">SEEK SHELTER IMMEDIATELY</div>
     <div class="siren-bar bottom"></div>
   </div>
 
@@ -269,23 +327,25 @@
   <div id="game-over">
     <h2 id="game-over-title"></h2>
     <p id="game-over-msg"></p>
+    <div id="game-over-stats"></div>
     <div id="rematch-controls">
-      <button class="cmd-btn primary" id="rematch-btn">REMATCH</button>
-      <button class="cmd-btn" onclick="location.reload()">LEAVE</button>
+      <button class="cmd-btn primary" id="rematch-btn" data-i18n="rematch">REMATCH</button>
+      <button class="cmd-btn" id="leave-btn" data-i18n="leave">LEAVE</button>
     </div>
     <p id="rematch-status"></p>
   </div>
 
   <!-- Opponent disconnected overlay -->
   <div id="disconnect-overlay">
-    <h2>SIGNAL LOST</h2>
-    <p>Opponent has left the battlefield</p>
+    <h2 data-i18n="signal_lost">SIGNAL LOST</h2>
+    <p data-i18n="opponent_left">Opponent has left the battlefield</p>
     <div class="disconnect-controls">
-      <button class="cmd-btn primary" id="disconnect-new-game">NEW GAME</button>
+      <button class="cmd-btn primary" id="disconnect-new-game" data-i18n="new_game">NEW GAME</button>
     </div>
   </div>
 
   <script src="https://cdn.socket.io/4.8.3/socket.io.min.js"></script>
+  <script src="i18n.js"></script>
   <script src="game.js"></script>
 </body>
 </html>
