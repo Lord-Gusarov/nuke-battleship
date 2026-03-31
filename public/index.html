@@ -181,6 +181,7 @@
       <!-- Panel: Main menu -->
       <div class="terminal-panel" id="panel-main">
         <div class="terminal-label" data-i18n="command_center">COMMAND CENTER</div>
+        <div class="terminal-subtitle" data-i18n="select_operation">SELECT YOUR OPERATION</div>
         <button id="new-game-btn" class="cmd-btn primary" data-i18n="new_game">NEW GAME</button>
         <button id="join-screen-btn" class="cmd-btn" data-i18n="join_room">JOIN ROOM</button>
       </div>
@@ -188,31 +189,46 @@
       <!-- Panel: New Game (choose opponent) -->
       <div class="terminal-panel" id="panel-new-game" style="display:none">
         <div class="terminal-label" data-i18n="new_game_label">NEW GAME</div>
+        <div class="terminal-subtitle" data-i18n="choose_engagement">CHOOSE YOUR ENGAGEMENT</div>
         <button id="choose-player-btn" class="cmd-btn primary" data-i18n="vs_player">VS PLAYER</button>
         <button id="choose-ai-btn" class="cmd-btn ai-btn" data-i18n="vs_computer">VS COMPUTER</button>
         <button id="new-game-back-btn" class="cmd-btn" data-i18n="back">BACK</button>
       </div>
 
-      <!-- Panel: Game Settings (nukes + difficulty) -->
-      <div class="terminal-panel" id="panel-game-settings" style="display:none">
+      <!-- Panel: Game Settings (nukes + mode + difficulty) -->
+      <div class="terminal-panel settings-panel" id="panel-game-settings" style="display:none">
         <div class="terminal-label" data-i18n="game_settings">GAME SETTINGS</div>
-        <div class="nuke-setting">
-          <label data-i18n="nukes_per_player">NUKES PER PLAYER</label>
-          <div class="nuke-stepper">
-            <button class="stepper-btn" id="nuke-minus">-</button>
-            <input type="text" id="nuke-input" value="" placeholder="2" inputmode="numeric">
-            <button class="stepper-btn" id="nuke-plus">+</button>
+        <div class="terminal-subtitle" data-i18n="configure_tactical">CONFIGURE TACTICAL PARAMETERS</div>
+        <div class="settings-fields">
+          <div class="mode-setting">
+            <label data-i18n="game_mode">GAME MODE</label>
+            <div class="mode-toggle">
+              <button class="mode-btn selected" data-mode="standard" data-i18n="mode_standard">STANDARD</button>
+              <button class="mode-btn" data-mode="classic" data-i18n="mode_classic">CLASSIC</button>
+              <button class="mode-btn" data-mode="fog" data-i18n="mode_fog">FOG OF WAR</button>
+            </div>
+          </div>
+          <div class="mode-desc" id="mode-desc" data-i18n="mode_desc_standard">Missiles and nukes. The full arsenal at your disposal.</div>
+          <div class="nuke-setting" id="nuke-row">
+            <label data-i18n="nukes_per_player">NUKES PER PLAYER</label>
+            <div class="nuke-stepper">
+              <button class="stepper-btn" id="nuke-minus">-</button>
+              <input type="text" id="nuke-input" value="" placeholder="2" inputmode="numeric">
+              <button class="stepper-btn" id="nuke-plus">+</button>
+            </div>
+          </div>
+          <div class="difficulty-setting" id="difficulty-row" style="display:none">
+            <label data-i18n="difficulty">DIFFICULTY</label>
+            <div class="difficulty-toggle">
+              <button class="diff-btn selected" data-diff="normal" data-i18n="normal">NORMAL</button>
+              <button class="diff-btn" data-diff="hard" data-i18n="hard">HARD</button>
+            </div>
           </div>
         </div>
-        <div class="difficulty-setting" id="difficulty-row" style="display:none">
-          <label data-i18n="difficulty">DIFFICULTY</label>
-          <div class="difficulty-toggle">
-            <button class="diff-btn selected" data-diff="normal" data-i18n="normal">NORMAL</button>
-            <button class="diff-btn" data-diff="hard" data-i18n="hard">HARD</button>
-          </div>
+        <div class="settings-actions">
+          <button id="settings-back-btn" class="cmd-btn" data-i18n="back">BACK</button>
+          <button id="start-game-btn" class="cmd-btn primary" data-i18n="start_game">START GAME</button>
         </div>
-        <button id="start-game-btn" class="cmd-btn primary" data-i18n="start_game">START GAME</button>
-        <button id="settings-back-btn" class="cmd-btn" data-i18n="back">BACK</button>
       </div>
 
       <!-- Panel: Join Room -->
@@ -226,13 +242,15 @@
       <!-- Panel: Waiting Room -->
       <div class="terminal-panel" id="panel-waiting" style="display:none">
         <div class="terminal-label" data-i18n="room_established">ROOM ESTABLISHED</div>
-        <div class="room-code-display" id="room-code-display">--------</div>
+        <div class="terminal-subtitle" data-i18n="signal_transmitted">SIGNAL TRANSMITTED — AWAITING RESPONSE</div>
+        <div class="room-code-display room-code-pulse" id="room-code-display">--------</div>
         <div class="room-code-hint" data-i18n="share_code">SHARE THIS CODE WITH YOUR OPPONENT</div>
         <button id="copy-link-btn" class="cmd-btn" data-i18n="copy_invite_link">COPY INVITE LINK</button>
         <div class="waiting-indicator">
           <span class="waiting-dots" id="waiting-dots" data-i18n="waiting_for_opponent">WAITING FOR OPPONENT</span>
         </div>
         <div class="nuke-info" id="waiting-nuke-info"></div>
+        <div class="nuke-info" id="waiting-config-summary"></div>
         <button id="waiting-back-btn" class="cmd-btn" data-i18n="leave_room">LEAVE ROOM</button>
       </div>
     </div>
@@ -297,6 +315,7 @@
           <div class="grid" id="defense-grid"></div>
           <div class="grid-scanlines"></div>
         </div>
+        <div id="my-ship-status"></div>
       </div>
     </div>
   </div>
@@ -305,6 +324,16 @@
   <div id="battle-log" style="display:none;">
     <h3 data-i18n="battle_log">// BATTLE LOG</h3>
     <div id="log-entries"></div>
+  </div>
+
+  <!-- Turn transition overlay -->
+  <div id="turn-overlay">
+    <span id="turn-overlay-text"></span>
+  </div>
+
+  <!-- Phase transition overlay -->
+  <div id="phase-overlay">
+    <span id="phase-overlay-text"></span>
   </div>
 
   <!-- Nuke countdown overlay -->
@@ -329,6 +358,7 @@
     <p id="game-over-msg"></p>
     <div id="game-over-stats"></div>
     <div id="rematch-controls">
+      <button class="cmd-btn" id="reveal-btn" data-i18n="reveal_board">REVEAL BOARD</button>
       <button class="cmd-btn primary" id="rematch-btn" data-i18n="rematch">REMATCH</button>
       <button class="cmd-btn" id="leave-btn" data-i18n="leave">LEAVE</button>
     </div>

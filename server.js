@@ -56,6 +56,21 @@ const DISCONNECT_GRACE_MS = 15000;
 
 // ── AI helpers ──
 
+function emitBoardReveal(io, game, roomId) {
+  for (let i = 0; i < 2; i++) {
+    const opponentIdx = 1 - i;
+    const opponentShips = game.players[opponentIdx].ships.map(s => ({
+      name: s.name,
+      cells: s.cells,
+      sunk: s.sunk
+    }));
+    const sid = game.players[i].socketId;
+    if (sid && sid !== '__AI__') {
+      io.to(sid).emit('board_reveal', opponentShips);
+    }
+  }
+}
+
 function setupAIPlayer(game) {
   const aiPlayer = game.players[1];
   const configForAI = { ...CONFIG, NUKES_PER_PLAYER: game.nukesPerPlayer, difficulty: game.difficulty || 'normal' };
@@ -119,6 +134,7 @@ function scheduleAITurn(game, roomId) {
       io.to(roomId).emit('turn', g.turn);
     } else {
       log('GAME_OVER', `AI won`, { roomId });
+      emitBoardReveal(io, g, roomId);
     }
   }, delay);
 }
@@ -139,12 +155,13 @@ io.on('connection', (socket) => {
 
   socket.on('join_room', (data) => {
     // Accept either a string (room ID) or { roomId, nukes } object
-    let roomId, nukes;
+    let roomId, nukes, mode;
     if (typeof data === 'string') {
       roomId = data;
     } else if (data && typeof data === 'object') {
       roomId = data.roomId;
       nukes = data.nukes;
+      mode = data.mode;
     }
     if (!roomId || typeof roomId !== 'string') {
       log('WARN', `Invalid room ID from socket`, { socketId: socket.id, roomId });
@@ -156,9 +173,13 @@ io.on('connection', (socket) => {
     const isNewGame = !game;
 
     if (!game) {
+      const validModes = ['standard', 'classic', 'fog'];
+      const gameMode = validModes.includes(mode) ? mode : 'standard';
+      if (gameMode === 'classic') nukes = 0;
       game = createGame(roomId, nukes);
+      game.mode = gameMode;
       games.set(roomId, game);
-      log('ROOM', `Room created`, { roomId, nukesPerPlayer: game.nukesPerPlayer });
+      log('ROOM', `Room created`, { roomId, nukesPerPlayer: game.nukesPerPlayer, mode: gameMode });
     }
 
     // Find a slot
@@ -213,6 +234,7 @@ io.on('connection', (socket) => {
       playerIdx: idx,
       config: { ...CONFIG, NUKES_PER_PLAYER: game.nukesPerPlayer },
       roomId,
+      mode: game.mode || 'standard',
     });
 
     const bothConnected = game.players[0].socketId && game.players[1].socketId;
@@ -231,11 +253,15 @@ io.on('connection', (socket) => {
   });
 
   socket.on('join_ai_game', (data) => {
-    const nukes = (data && typeof data === 'object') ? data.nukes : undefined;
+    let nukes = (data && typeof data === 'object') ? data.nukes : undefined;
     const difficulty = (data && typeof data === 'object' && (data.difficulty === 'hard' || data.difficulty === 'normal')) ? data.difficulty : 'normal';
+    const validModes = ['standard', 'classic', 'fog'];
+    const mode = (data && typeof data === 'object' && validModes.includes(data.mode)) ? data.mode : 'standard';
+    if (mode === 'classic') nukes = 0;
     const roomId = `ai-${crypto.randomBytes(4).toString('hex')}`;
     const game = createGame(roomId, nukes);
     game.difficulty = difficulty;
+    game.mode = mode;
     games.set(roomId, game);
 
     // Human is player 0
@@ -248,13 +274,14 @@ io.on('connection', (socket) => {
     setupAIPlayer(game);
 
     game.phase = 'placement';
-    log('AI_GAME', `AI game created`, { roomId, nukesPerPlayer: game.nukesPerPlayer, difficulty });
+    log('AI_GAME', `AI game created`, { roomId, nukesPerPlayer: game.nukesPerPlayer, difficulty, mode });
 
     socket.emit('joined', {
       playerIdx: 0,
       config: { ...CONFIG, NUKES_PER_PLAYER: game.nukesPerPlayer },
       roomId,
       isAI: true,
+      mode,
     });
     socket.emit('phase', 'placement');
   });
@@ -367,6 +394,7 @@ io.on('connection', (socket) => {
       }
     } else {
       log('GAME_OVER', `Game finished`, { roomId: currentRoom, winner: playerIdx });
+      emitBoardReveal(io, game, currentRoom);
     }
   });
 
@@ -386,6 +414,8 @@ io.on('connection', (socket) => {
       loserIdx: playerIdx,
       winnerIdx,
     });
+
+    emitBoardReveal(io, game, currentRoom);
   });
 
   socket.on('reaction', (reactionId) => {
@@ -423,15 +453,17 @@ io.on('connection', (socket) => {
       const wasAI = game.isAI;
       log('REMATCH', `Both agreed, resetting game`, { roomId: currentRoom, nukesPerPlayer: game.nukesPerPlayer, isAI: wasAI });
 
-      // Preserve socket IDs, nuke config, and difficulty
+      // Preserve socket IDs, nuke config, difficulty, and mode
       const s0 = game.players[0].socketId;
       const s1 = game.players[1].socketId;
       const nukes = game.nukesPerPlayer;
       const difficulty = game.difficulty || 'normal';
+      const mode = game.mode || 'standard';
 
       // Reset to fresh state
       const fresh = createGame(currentRoom, nukes);
       fresh.difficulty = difficulty;
+      fresh.mode = mode;
       fresh.players[0].socketId = s0;
       fresh.players[1].socketId = s1;
       fresh.phase = 'placement';
@@ -446,6 +478,7 @@ io.on('connection', (socket) => {
         config: { ...CONFIG, NUKES_PER_PLAYER: nukes },
         isAI: wasAI,
         difficulty,
+        mode,
       });
       io.to(currentRoom).emit('phase', 'placement');
     }

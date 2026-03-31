@@ -617,6 +617,29 @@
     } catch (e) {}
   }
 
+  // ── Haptic feedback ──
+  function haptic(pattern) {
+    try { navigator.vibrate && navigator.vibrate(pattern); } catch (e) {}
+  }
+
+  // ── Timer warning beep ──
+  function playTimerBeep() {
+    try {
+      const ctx = getAudioCtx();
+      if (!ctx) return;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(800, ctx.currentTime);
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.1);
+    } catch (e) {}
+  }
+
   function nukeFlash() {
     try {
       const flash = document.getElementById('nuke-flash');
@@ -726,7 +749,12 @@
   let defenseGrid = [];
   let myTurn = false;
   let sunkEnemyShips = [];
+  let mySunkShips = [];
   let processingShot = false;
+  let gameMode = 'standard';
+  let missHistory = [];  // fog of war: [{r, c, myShotNumber}]
+  let myShotCount = 0;
+  let revealedShips = null;  // board reveal data from server
 
   // Game stats
   let stats = { shotsFired: 0, hits: 0, misses: 0, nukesUsed: 0, turnsPlayed: 0 };
@@ -762,8 +790,11 @@
 
   const TURN_TIME_LIMIT = 30; // seconds
 
+  let timerBeeped = false;
+
   function startTurnTimer() {
     stopTurnTimer();
+    timerBeeped = false;
     turnStartTime = Date.now();
     updateTimerDisplay();
     turnTimerInterval = setInterval(() => {
@@ -782,6 +813,11 @@
     const remaining = Math.max(0, TURN_TIME_LIMIT - elapsed);
     $turnTimer.textContent = `${remaining}s`;
     $turnTimer.classList.toggle('timer-urgent', remaining <= 10 && myTurn);
+    if (remaining === 10 && myTurn && !timerBeeped) {
+      timerBeeped = true;
+      playTimerBeep();
+      haptic(50);
+    }
   }
 
   function stopTurnTimer() {
@@ -943,8 +979,22 @@
 
   // Panel switching within the lobby terminal box
   function showPanel(panelId) {
-    document.querySelectorAll('.terminal-panel').forEach(p => p.style.display = 'none');
-    document.getElementById(panelId).style.display = '';
+    const current = document.querySelector('.terminal-panel:not([style*="display: none"])');
+    const next = document.getElementById(panelId);
+    if (current && current !== next) {
+      current.classList.add('panel-leaving');
+      setTimeout(() => {
+        current.style.display = 'none';
+        current.classList.remove('panel-leaving');
+      }, 200);
+    } else {
+      document.querySelectorAll('.terminal-panel').forEach(p => p.style.display = 'none');
+    }
+    setTimeout(() => {
+      next.style.display = '';
+      next.classList.add('panel-entering');
+      setTimeout(() => next.classList.remove('panel-entering'), 250);
+    }, current && current !== next ? 150 : 0);
   }
 
   // Auto-join from URL parameter
@@ -981,17 +1031,37 @@
     showPanel('panel-game-settings');
   });
 
+  // Game mode toggle
+  document.querySelectorAll('.mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      const mode = btn.dataset.mode;
+      const nukeRow = document.getElementById('nuke-row');
+      if (mode === 'classic') {
+        nukeRow.style.display = 'none';
+      } else {
+        nukeRow.style.display = '';
+      }
+      document.getElementById('mode-desc').textContent = t('mode_desc_' + mode);
+    });
+  });
+
   // Settings → Start Game
   document.getElementById('start-game-btn').addEventListener('click', () => {
+    const modeBtn = document.querySelector('.mode-btn.selected');
+    const mode = modeBtn ? modeBtn.dataset.mode : 'standard';
     const raw = document.getElementById('nuke-input').value.trim();
-    const nukes = raw === '' ? 2 : (parseInt(raw) || 0);
+    let nukes = raw === '' ? 2 : (parseInt(raw) || 0);
+    if (mode === 'classic') nukes = 0;
+    gameMode = mode;
     if (pendingVsAI) {
       const diffBtn = document.querySelector('.diff-btn.selected');
       const difficulty = diffBtn ? diffBtn.dataset.diff : 'normal';
-      socket.emit('join_ai_game', { nukes, difficulty });
+      socket.emit('join_ai_game', { nukes, difficulty, mode });
     } else {
       const code = Math.random().toString(36).substring(2, 10);
-      joinRoom(code, nukes);
+      joinRoom(code, nukes, mode);
     }
   });
 
@@ -1072,9 +1142,9 @@
     location.reload();
   });
 
-  function joinRoom(code, nukes) {
+  function joinRoom(code, nukes, mode) {
     if (nukes !== undefined) {
-      socket.emit('join_room', { roomId: code, nukes });
+      socket.emit('join_room', { roomId: code, nukes, mode });
     } else {
       socket.emit('join_room', code);
     }
@@ -1142,7 +1212,29 @@
 
   // Leave button on game over
   document.getElementById('leave-btn').addEventListener('click', () => {
+    window.history.replaceState({}, '', basePath || '/');
     location.reload();
+  });
+
+  // Reveal board button on game over
+  document.getElementById('reveal-btn').addEventListener('click', () => {
+    if (revealedShips) {
+      renderBoardReveal(revealedShips);
+      document.getElementById('reveal-btn').style.display = 'none';
+      // Close game-over overlay briefly so player can see the board
+      document.getElementById('game-over').classList.remove('active');
+      toast(t('reveal_board'), 'sunk-toast');
+      // Re-show after 5 seconds
+      setTimeout(() => {
+        document.getElementById('game-over').classList.add('active');
+      }, 5000);
+    }
+  });
+
+  // Board reveal from server
+  socket.on('board_reveal', (ships) => {
+    revealedShips = ships;
+    document.getElementById('reveal-btn').style.display = '';
   });
 
   // ── Socket events ──
@@ -1172,20 +1264,24 @@
       document.getElementById('room-code-display').textContent = roomId.toUpperCase();
       document.getElementById('waiting-nuke-info').textContent =
         myNukes > 0 ? t('nukes_per_player_info', { count: myNukes }) : t('nukes_disabled');
+      const modeLabel = gameMode === 'classic' ? t('mode_classic') : gameMode === 'fog' ? t('mode_fog') : t('mode_standard');
+      document.getElementById('waiting-config-summary').textContent = t('game_config_summary', { nukes: myNukes, mode: modeLabel });
       showPanel('panel-waiting');
       startWaitingDots();
     }
   });
 
-  socket.on('phase', (newPhase) => {
+  socket.on('phase', async (newPhase) => {
     clientLog('info', `Phase changed: ${newPhase}`);
     phase = newPhase;
 
     document.getElementById('menu-forfeit').style.display = (newPhase === 'battle') ? '' : 'none';
 
     if (phase === 'placement') {
+      await showPhaseOverlay('deployment_phase', '', 800);
       startPlacement();
     } else if (phase === 'battle') {
+      await showPhaseOverlay('battle_stations', 'battle', 1200);
       startBattle();
     }
   });
@@ -1213,7 +1309,11 @@
 
   socket.on('error_msg', (msg) => {
     clientLog('error', `Server error: ${msg}`);
-    toast(msg, 'error');
+    if (gameMode === 'fog' && msg === 'All targeted cells already shot') {
+      toast(t('already_targeted'), 'error');
+    } else {
+      toast(msg, 'error');
+    }
   });
 
   socket.on('forfeit_result', ({ loserIdx, winnerIdx }) => {
@@ -1231,9 +1331,9 @@
   socket.on('opponent_reaction', (reactionId) => {
     const key = REACTIONS_KEYS[reactionId];
     if (!key) return;
-    // Emoji reactions don't need translation
     const msg = key.startsWith('reaction_') ? t(key) : key;
     toast(t('opponent_reaction', { msg }), 'reaction-toast');
+    spawnFloatingReaction(msg);
   });
 
   // ── Placement ──
@@ -1539,6 +1639,15 @@
   function startBattle() {
     showScreen('battle-screen');
     document.getElementById('battle-log').style.display = '';
+    document.getElementById('reveal-btn').style.display = 'none';
+    revealedShips = null;
+
+    // Hide nuke button in classic mode
+    if (gameMode === 'classic' || config.NUKES_PER_PLAYER === 0) {
+      document.getElementById('nuke-btn').style.display = 'none';
+    } else {
+      document.getElementById('nuke-btn').style.display = '';
+    }
 
     const attackContainer = document.getElementById('attack-grid');
     attackGrid = buildGrid(attackContainer, config.GRID_SIZE, onAttackClick);
@@ -1549,6 +1658,9 @@
     for (const ship of shipPlacements) {
       applyShipVisuals(defenseGrid, ship.cells, ship.orientation || 'h');
     }
+
+    renderShipStatus(true);
+    renderMyShipStatus(true);
 
     attackContainer.addEventListener('mouseover', onAttackHover);
     attackContainer.addEventListener('mouseout', clearNukePreview);
@@ -1658,6 +1770,113 @@
     }
   }
 
+  // ── My fleet health panel ──
+
+  function renderMyShipStatus(forceRebuild) {
+    const container = document.getElementById('my-ship-status');
+    if (!container) return;
+    if (!container.children.length || forceRebuild) {
+      const prevSunk = [];
+      if (forceRebuild) {
+        for (const tag of container.children) {
+          if (tag.classList.contains('my-sunk')) prevSunk.push(tag.dataset.ship);
+        }
+      }
+      container.innerHTML = config.SHIPS.map(s =>
+        `<span class="ship-tag${mySunkShips.some(es => es.name === s.name) || prevSunk.includes(s.name) ? ' my-sunk' : ''}" data-ship="${s.name}">${shipName(s.name)}</span>`
+      ).join('');
+    }
+    const sunkNames = mySunkShips.map(s => s.name);
+    for (const tag of container.children) {
+      const name = tag.dataset.ship;
+      if (sunkNames.includes(name) && !tag.classList.contains('my-sunk')) {
+        tag.classList.add('my-sunk');
+      }
+    }
+  }
+
+  // ── Turn transition overlay ──
+
+  function showTurnOverlay(isMyTurn) {
+    if (phase !== 'battle' || processingShot) return;
+    const overlay = document.getElementById('turn-overlay');
+    const text = document.getElementById('turn-overlay-text');
+    text.textContent = isMyTurn ? t('your_turn_indicator') : t('enemy_turn_indicator');
+    overlay.className = isMyTurn ? 'active your-turn' : 'active enemy-turn';
+    setTimeout(() => { overlay.className = ''; }, 1000);
+  }
+
+  // ── Phase transition overlay ──
+
+  function showPhaseOverlay(textKey, type, duration) {
+    return new Promise(resolve => {
+      const overlay = document.getElementById('phase-overlay');
+      const text = document.getElementById('phase-overlay-text');
+      text.textContent = t(textKey);
+      overlay.className = 'active' + (type ? ' ' + type : '');
+      setTimeout(() => {
+        overlay.className = '';
+        resolve();
+      }, duration || 1200);
+    });
+  }
+
+  // ── Floating reaction ──
+
+  function spawnFloatingReaction(msg) {
+    const el = document.createElement('div');
+    el.className = 'floating-reaction';
+    el.textContent = msg;
+    // Position near center-top of viewport
+    el.style.left = (30 + Math.random() * 40) + '%';
+    el.style.top = '40%';
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 2500);
+  }
+
+  // ── Board reveal ──
+
+  function renderBoardReveal(ships) {
+    if (!attackGrid.length || !ships) return;
+    for (const ship of ships) {
+      if (ship.sunk) continue;  // already shown as sunk silhouette
+      const cells = ship.cells;
+      if (!cells || cells.length === 0) continue;
+      const orient = (cells.length === 1) ? 'h'
+        : (cells[0].r === cells[1].r) ? 'h' : 'v';
+      const sorted = [...cells].sort((a, b) =>
+        orient === 'h' ? a.c - b.c : a.r - b.r
+      );
+      for (let i = 0; i < sorted.length; i++) {
+        const { r, c } = sorted[i];
+        if (r >= 0 && r < config.GRID_SIZE && c >= 0 && c < config.GRID_SIZE) {
+          const cell = attackGrid[r][c];
+          if (cell.classList.contains('hit') || cell.classList.contains('sunk-ship')) continue;
+          cell.classList.add('revealed-ship');
+          cell.dataset.revealOrient = orient;
+          if (i === 0) cell.dataset.revealPart = 'bow';
+          else if (i === sorted.length - 1) cell.dataset.revealPart = 'stern';
+          else cell.dataset.revealPart = 'mid';
+        }
+      }
+    }
+  }
+
+  // ── Fog of war: fade old misses ──
+
+  function processFogOfWar() {
+    if (gameMode !== 'fog' || !attackGrid.length) return;
+    for (let i = missHistory.length - 1; i >= 0; i--) {
+      const m = missHistory[i];
+      if (myShotCount - m.shotNum > 3) {
+        const cell = attackGrid[m.r][m.c];
+        cell.classList.remove('miss', 'nuke-miss');
+        // Cell looks blank again — but server still blocks re-fire
+        missHistory.splice(i, 1);
+      }
+    }
+  }
+
   function clearNukePreview() {
     if (!attackGrid.length) return;
     for (let r = 0; r < config.GRID_SIZE; r++) {
@@ -1711,8 +1930,10 @@
     updateClickableCells();
     updateTurnIndicator();
     startTurnTimer();
+    processFogOfWar();
     if (!processingShot) {
       setStatus(myTurn ? t('your_turn_fire') : (vsComputer ? t('computer_turn') : t('opponent_turn')), myTurn);
+      showTurnOverlay(myTurn);
     }
   });
 
@@ -1860,8 +2081,13 @@
     selectedWeapon = 'missile';
     myTurn = false;
     sunkEnemyShips = [];
+    mySunkShips = [];
     processingShot = false;
+    missHistory = [];
+    myShotCount = 0;
+    revealedShips = null;
     stats = { shotsFired: 0, hits: 0, misses: 0, nukesUsed: 0, turnsPlayed: 0 };
+    if (data.mode) gameMode = data.mode;
 
     // Clear battle log
     const logEntries = document.getElementById('log-entries');
@@ -1870,6 +2096,7 @@
 
     // Clear ship status for fresh rebuild
     document.getElementById('ship-status').innerHTML = '';
+    document.getElementById('my-ship-status').innerHTML = '';
 
     // Hide game over
     $gameOver.classList.remove('active', 'loser');
@@ -1936,6 +2163,22 @@
       }
     }
 
+    // Haptic feedback
+    const hasHit = results.some(r => r.result === 'hit');
+    if (isMyShot && hasHit) haptic(50);
+    if (!isMyShot && hasHit) haptic([50, 30, 50]);
+    if (weapon === 'nuke') haptic([100, 50, 200]);
+
+    // Track fog of war misses (count by my shots, not turns)
+    if (isMyShot) myShotCount++;
+    if (isMyShot && gameMode === 'fog') {
+      for (const res of results) {
+        if (res.result === 'miss') {
+          missHistory.push({ r: res.r, c: res.c, shotNum: myShotCount });
+        }
+      }
+    }
+
     // Track stats
     if (isMyShot) {
       stats.shotsFired++;
@@ -1945,7 +2188,7 @@
     }
     stats.turnsPlayed++;
 
-    // Track sunk ships
+    // Track sunk enemy ships (attacker)
     if (isMyShot && sunkShips) {
       const previousNames = sunkEnemyShips.map(s => s.name);
       sunkEnemyShips = sunkShips;
@@ -1955,9 +2198,27 @@
         renderSunkShipOutline(ship);
         if (!gameOver) {
           playSunkSound();
+          haptic([50, 50, 100]);
           await new Promise(resolve => setTimeout(resolve, 400));
           toast(t('you_sunk_ship', { name: shipName(ship.name) }), 'sunk-toast');
           addLogEntry(t('sunk_log', { name: shipName(ship.name) }), 'log-sunk');
+        }
+      }
+    }
+
+    // Track sunk own ships (defender)
+    if (!isMyShot && sunkShips) {
+      const previousMyNames = mySunkShips.map(s => s.name);
+      mySunkShips = sunkShips;
+      renderMyShipStatus();
+      const newlyMySunk = sunkShips.filter(s => !previousMyNames.includes(s.name));
+      for (const ship of newlyMySunk) {
+        if (!gameOver) {
+          playSunkSound();
+          haptic([50, 30, 50, 30, 100]);
+          await new Promise(resolve => setTimeout(resolve, 400));
+          toast(t('your_ship_sunk', { name: shipName(ship.name) }), 'sunk-toast');
+          addLogEntry(t('your_ship_sunk', { name: shipName(ship.name) }), 'log-sunk');
         }
       }
     }
