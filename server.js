@@ -429,6 +429,17 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('chat_message', (msg) => {
+    if (!currentRoom || playerIdx === null) return;
+    const game = games.get(currentRoom);
+    if (!game || (game.phase !== 'battle' && game.phase !== 'finished')) return;
+    if (typeof msg !== 'string' || msg.length === 0 || msg.length > 120) return;
+    const opponentSocket = game.players[1 - playerIdx].socketId;
+    if (opponentSocket && opponentSocket !== '__AI__') {
+      io.to(opponentSocket).emit('chat_message', msg);
+    }
+  });
+
   socket.on('request_rematch', () => {
     if (!currentRoom || playerIdx === null) return;
     const game = games.get(currentRoom);

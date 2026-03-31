@@ -1696,6 +1696,11 @@
 
     updateNukeCount();
     renderShipStatus();
+
+    // Show chat for multiplayer games
+    if (!vsComputer) {
+      showChatPanel(true);
+    }
   }
 
   function selectWeapon(weapon) {
@@ -1832,6 +1837,115 @@
     el.style.top = '40%';
     document.body.appendChild(el);
     setTimeout(() => el.remove(), 2500);
+  }
+
+  // ── In-game chat ──
+
+  const $chatPanel = document.getElementById('chat-panel');
+  const $chatToggle = document.getElementById('chat-toggle');
+  const $chatWindow = document.getElementById('chat-window');
+  const $chatClose = document.getElementById('chat-close');
+  const $chatInput = document.getElementById('chat-input');
+  const $chatSend = document.getElementById('chat-send');
+  const $chatMessages = document.getElementById('chat-messages');
+  const $chatBadge = document.getElementById('chat-badge');
+  let chatOpen = false;
+  let chatUnread = 0;
+
+  function showChatPanel(show) {
+    $chatPanel.style.display = show ? 'block' : 'none';
+  }
+
+  function toggleChat() {
+    chatOpen = !chatOpen;
+    $chatWindow.classList.toggle('chat-collapsed', !chatOpen);
+    if (chatOpen) {
+      chatUnread = 0;
+      $chatBadge.style.display = 'none';
+      $chatMessages.scrollTop = $chatMessages.scrollHeight;
+      $chatInput.focus();
+    }
+  }
+
+  $chatToggle.addEventListener('click', toggleChat);
+  $chatClose.addEventListener('click', () => {
+    chatOpen = false;
+    $chatWindow.classList.add('chat-collapsed');
+  });
+
+  function isEmojiOnly(text) {
+    const stripped = text.replace(/[\s\uFE0F]/g, '');
+    const emojiPattern = /^(?:\p{Emoji_Presentation}|\p{Extended_Pictographic})+$/u;
+    return stripped.length <= 8 && emojiPattern.test(stripped);
+  }
+
+  function appendChatMessage(text, isMine) {
+    const el = document.createElement('div');
+    el.className = 'chat-msg ' + (isMine ? 'mine' : 'theirs');
+    if (isEmojiOnly(text)) el.classList.add('emoji-only');
+
+    const sender = document.createElement('span');
+    sender.className = 'chat-sender';
+    sender.textContent = isMine ? t('chat_you') : t('chat_opponent');
+    el.appendChild(sender);
+
+    const body = document.createElement('span');
+    body.textContent = text;
+    el.appendChild(body);
+
+    $chatMessages.appendChild(el);
+    $chatMessages.scrollTop = $chatMessages.scrollHeight;
+  }
+
+  function sendChatMessage() {
+    const text = $chatInput.value.trim();
+    if (!text) return;
+    socket.emit('chat_message', text);
+    appendChatMessage(text, true);
+    $chatInput.value = '';
+  }
+
+  $chatSend.addEventListener('click', sendChatMessage);
+  $chatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      sendChatMessage();
+    }
+  });
+
+  document.querySelectorAll('.chat-emoji-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const emoji = btn.dataset.emoji;
+      socket.emit('chat_message', emoji);
+      appendChatMessage(emoji, true);
+    });
+  });
+
+  socket.on('chat_message', (msg) => {
+    appendChatMessage(msg, false);
+    if (!chatOpen) {
+      chatUnread++;
+      $chatBadge.textContent = chatUnread > 9 ? '9+' : chatUnread;
+      $chatBadge.style.display = '';
+    }
+    playNotificationSound();
+  });
+
+  function playNotificationSound() {
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    try {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(660, ctx.currentTime + 0.08);
+      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.15);
+    } catch (e) {}
   }
 
   // ── Board reveal ──
@@ -2089,10 +2203,14 @@
     stats = { shotsFired: 0, hits: 0, misses: 0, nukesUsed: 0, turnsPlayed: 0 };
     if (data.mode) gameMode = data.mode;
 
-    // Clear battle log
+    // Clear battle log and chat
     const logEntries = document.getElementById('log-entries');
     if (logEntries) logEntries.innerHTML = '';
     document.getElementById('battle-log').style.display = 'none';
+    $chatMessages.innerHTML = '';
+    chatUnread = 0;
+    $chatBadge.style.display = 'none';
+    showChatPanel(false);
 
     // Clear ship status for fresh rebuild
     document.getElementById('ship-status').innerHTML = '';

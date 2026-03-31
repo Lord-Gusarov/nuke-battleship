@@ -326,6 +326,35 @@
     <div id="log-entries"></div>
   </div>
 
+  <!-- In-game chat -->
+  <div id="chat-panel">
+    <button id="chat-toggle" aria-label="Toggle chat">
+      <span class="chat-toggle-icon">&#9993;</span>
+      <span class="chat-badge" id="chat-badge" style="display:none;">0</span>
+    </button>
+    <div id="chat-window" class="chat-collapsed">
+      <div class="chat-header">
+        <span data-i18n="chat_comms">COMMS</span>
+        <button id="chat-close" aria-label="Close chat">&times;</button>
+      </div>
+      <div id="chat-messages"></div>
+      <div id="chat-emoji-bar">
+        <button class="chat-emoji-btn" data-emoji="👍">👍</button>
+        <button class="chat-emoji-btn" data-emoji="😂">😂</button>
+        <button class="chat-emoji-btn" data-emoji="🔥">🔥</button>
+        <button class="chat-emoji-btn" data-emoji="💀">💀</button>
+        <button class="chat-emoji-btn" data-emoji="😱">😱</button>
+        <button class="chat-emoji-btn" data-emoji="🎯">🎯</button>
+        <button class="chat-emoji-btn" data-emoji="💣">💣</button>
+        <button class="chat-emoji-btn" data-emoji="🫡">🫡</button>
+      </div>
+      <div class="chat-input-row">
+        <input type="text" id="chat-input" data-i18n-placeholder="chat_placeholder" placeholder="Type a message..." maxlength="120" autocomplete="off" spellcheck="false">
+        <button id="chat-send" aria-label="Send">&#9654;</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Turn transition overlay -->
   <div id="turn-overlay">
     <span id="turn-overlay-text"></span>

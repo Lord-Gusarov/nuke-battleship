@@ -130,5 +130,9 @@
   "ship_battleship": "Battleship",
   "ship_cruiser": "Cruiser",
   "ship_submarine": "Submarine",
-  "ship_destroyer": "Destroyer"
+  "ship_destroyer": "Destroyer",
+  "chat_comms": "COMMS",
+  "chat_placeholder": "Type a message...",
+  "chat_you": "YOU",
+  "chat_opponent": "OPPONENT"
 }
